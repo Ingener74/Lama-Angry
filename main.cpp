@@ -10,6 +10,9 @@
 #include <stdexcept>
 #include <iostream>
 
+#define json_assert(cond, message) if(!(cond)) throw std::runtime_error(message);
+#define json_assertx(cond, format, ...) if(!(cond)) throw std::runtime_error(xsnprintf(128, format, __VA_ARGS__));
+
 namespace common {
     typedef std::vector<char> ByteBuffer;
 
@@ -37,31 +40,31 @@ namespace common {
         template<typename U>
         clean_allocator(clean_allocator<U> const&) {}
 
-        inline pointer address(reference r) { return &r; }
-        inline const_pointer address(const_reference r) { return &r; }
+        pointer address(reference r) { return &r; }
+        const_pointer address(const_reference r) { return &r; }
 
-        inline pointer allocate(size_type cnt, typename std::allocator<void>::const_pointer = 0) {
+        pointer allocate(size_type cnt, typename std::allocator<void>::const_pointer = 0) {
             pointer new_memory = reinterpret_cast<pointer>(::operator new(cnt * sizeof (T)));
             memset(new_memory, 0, cnt * sizeof(T));
             return new_memory;
         }
-        inline void deallocate(pointer p, size_type n) {
+        void deallocate(pointer p, size_type n) {
             ::operator delete(p);
         }
         //    size
-        inline size_type max_size() const {
+        size_type max_size() const {
             return std::numeric_limits<size_type>::max() / sizeof(T);
         }
 
-        inline void construct(pointer p, const T& t) {
+        void construct(pointer p, const T& t) {
             new(p) T(t);
         }
-        inline void destroy(pointer p) {
+        void destroy(pointer p) {
             p->~T();
         }
 
-        inline bool operator==(clean_allocator const&) { return true; }
-        inline bool operator!=(clean_allocator const& a) { return !operator==(a); }
+        bool operator==(clean_allocator const&) { return true; }
+        bool operator!=(clean_allocator const& a) { return !operator==(a); }
     };
 
     template <typename K, typename V>
@@ -162,10 +165,6 @@ namespace common {
 
 namespace json {
 
-#define json_assert(cond, message) if(!(cond)) throw std::runtime_error(message);
-#define json_assertx(cond, format, ...) if(!(cond)) throw std::runtime_error(xsnprintf(128, format, __VA_ARGS__));
-
-
     bool any_of(const std::vector<char>& symbols, char sym) {
         std::vector<char>::const_iterator it = std::find(symbols.begin(), symbols.end(), sym);
         return it != symbols.end();
@@ -236,6 +235,12 @@ namespace json {
                             (Bool, "Bool");
             return os << "type: " << tokenTypes.at(token.type) << (token.value.empty() ? "" : " value: " + token.value);
         }
+
+        struct LexerState{
+            int goTo;
+        };
+        typedef std::vector<std::vector<LexerState> > LexerStateMachine;
+        static LexerStateMachine lexerStateMachine;
 
         typedef std::vector<Token> Tokens;
 
@@ -352,7 +357,7 @@ namespace json {
         static Rules jsonGrammarRules;
 
         States actionTable;
-        int gotoTable;
+        int goToTable;
 
         void buildActionAndGotoTables() {
         }
@@ -377,7 +382,7 @@ namespace json {
             return ActionState(Shift, 0);
         }
 
-        int goto_() {
+        int goTo() {
         }
     };
 
@@ -617,15 +622,14 @@ int main() {
     try {
         typedef std::vector<json::Token> Tokens;
 
-        const char* test_json =
-                "{"
-                        "\"Pasha\": \"Xyu\", \n"
-                        "\"Pi\": 3.1415, \n"
-                        "\"meaningOfLife\": 42, \n"
-                        "\"FuckingString\": \"Tra ta ta\", \n"
-                        "\"MyHeartIsBroken\": True, \n"
-                        "\t\"AllBad\": False\n"
-                        "}";
+        const char* test_json = "{"
+            "\"Pasha\": \"Xyu\", \n"
+            "\"Pi\": 3.1415, \n"
+            "\"meaningOfLife\": 42, \n"
+            "\"FuckingString\": \"Tra ta ta\", \n"
+            "\"MyHeartIsBroken\": True, \n"
+            "\t\"AllBad\": False\n"
+        "}";
 
         Tokens tokens = json::Token::tokenize(test_json);
 
