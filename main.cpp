@@ -1,14 +1,16 @@
 #include <stdint.h>
 #include <stdarg.h>
-#include <limits>
-#include <vector>
+#include <set>
 #include <map>
 #include <string>
+#include <limits>
+#include <vector>
+#include <cstdio>
 #include <cstring>
-#include <algorithm>
 #include <sstream>
-#include <stdexcept>
 #include <iostream>
+#include <stdexcept>
+#include <algorithm>
 
 #define json_assert(cond, message) if(!(cond)) throw std::runtime_error(message);
 #define json_assertx(cond, format, ...) if(!(cond)) throw std::runtime_error(xsnprintf(128, format, __VA_ARGS__));
@@ -83,6 +85,25 @@ namespace common {
 
         operator std::map<K, V>() {
             return map;
+        }
+    };
+
+    template <typename V>
+    class CreateSet {
+    private:
+        std::set<V> set;
+    public:
+        CreateSet(const V& val) {
+            set.insert(val);
+        }
+
+        CreateSet<V>& operator()(const V& val) {
+            set.insert(val);
+            return *this;
+        }
+
+        operator std::set<V>() {
+            return set;
         }
     };
 
@@ -216,6 +237,8 @@ namespace json {
             Float,
             String,
             Bool,
+
+			TypeCount,
         };
 
         Token(Type type, const std::string& value = std::string()) : type(type), value(value) {}
@@ -236,11 +259,57 @@ namespace json {
             return os << "type: " << tokenTypes.at(token.type) << (token.value.empty() ? "" : " value: " + token.value);
         }
 
-        struct LexerState{
-            int goTo;
-        };
-        typedef std::vector<std::vector<LexerState> > LexerStateMachine;
+		enum LexerState {
+			Initial,
+			IntegerState,
+			FloatState,
+			StringState,
+			BoolState_t,
+			BoolState_r,
+			BoolState_u,
+			BoolState_f,
+			BoolState_a,
+			BoolState_l,
+			BoolState_s,
+			BoolState_e,
+			EndToken,
+		};
+
+		struct LexerOutput {
+			LexerState lexerState;
+			Type type;
+
+			LexerOutput(LexerState lexerState = Initial, Type type = TypeCount) : lexerState(lexerState), type(type)
+			{}
+		};
+		enum Condition {
+			Equal,
+			NotEqual,
+			InSet,
+			NotInSet,
+		};
+		struct Character {
+			std::set<char> chars;
+			Condition condition;
+
+			Character(const std::set<char>& chars = std::set<char>(), Condition condition = Equal) : chars(chars), condition(condition)
+			{}
+
+			friend bool operator<(const Character& lhs, const Character& rhs)
+			{
+				if (lhs.chars < rhs.chars)
+					return true;
+				if (rhs.chars < lhs.chars)
+					return false;
+				return lhs.condition < rhs.condition;
+			}
+		};
+        typedef std::map<LexerState, std::map<Character, LexerOutput> > LexerStateMachine;
+		typedef common::CreateMap<LexerState, std::map<Character, LexerOutput> > CreateLexerStateMachine;
+		typedef common::CreateMap<Character, LexerOutput> CreateLexerState;
+		typedef common::CreateSet<char> CreateChars;
         static LexerStateMachine lexerStateMachine;
+
 
         typedef std::vector<Token> Tokens;
 
@@ -304,6 +373,53 @@ namespace json {
         std::string value;
         int startLine, endLine, startSymbol, endSymbol;
     };
+
+	Token::LexerStateMachine Token::lexerStateMachine = Token::CreateLexerStateMachine
+			(Token::Initial, Token::CreateLexerState
+					(Token::Character(Token::CreateChars('{')), Token::LexerOutput(Token::EndToken, Token::ObjectStart))
+					(Token::Character(Token::CreateChars('}')), Token::LexerOutput(Token::EndToken, Token::ObjectEnd))
+					(Token::Character(Token::CreateChars('[')), Token::LexerOutput(Token::EndToken, Token::ArrayStart))
+					(Token::Character(Token::CreateChars(']')), Token::LexerOutput(Token::EndToken, Token::ArrayEnd))
+					(Token::Character(Token::CreateChars(':')), Token::LexerOutput(Token::EndToken, Token::Semicolon))
+					(Token::Character(Token::CreateChars(',')), Token::LexerOutput(Token::EndToken, Token::Comma))
+					(Token::Character(Token::CreateChars('"')), Token::LexerOutput(Token::StringState))
+					(Token::Character(Token::CreateChars('+')('-'), Token::InSet), Token::LexerOutput(Token::IntegerState))
+					(Token::Character(Token::CreateChars('t')('T'), Token::InSet), Token::LexerOutput(Token::BoolState_t))
+					(Token::Character(Token::CreateChars('f')('F'), Token::InSet), Token::LexerOutput(Token::BoolState_f))
+
+			)
+			(Token::StringState, Token::CreateLexerState
+					(Token::Character(Token::CreateChars('"')), Token::LexerOutput(Token::StringState))
+					(Token::Character(Token::CreateChars('"'), Token::NotEqual), Token::LexerOutput(Token::StringState))
+					(Token::Character(Token::CreateChars('"')), Token::LexerOutput(Token::EndToken, Token::String))
+			)
+			(Token::IntegerState, Token::CreateLexerState
+					(Token::Character(Token::CreateChars('0')('1')('2')('3')('4')('5')('6')('7')('8')('9'), Token::InSet), Token::LexerOutput(Token::IntegerState))
+					(Token::Character(Token::CreateChars('0')('1')('2')('3')('4')('5')('6')('7')('8')('9'), Token::NotInSet), Token::LexerOutput(Token::EndToken, Token::Integer))
+					(Token::Character(Token::CreateChars('.')('e')('E'), Token::InSet), Token::LexerOutput(Token::FloatState))
+			)
+			(Token::BoolState_t, Token::CreateLexerState
+					(Token::Character(Token::CreateChars('r')('R'), Token::InSet), Token::LexerOutput(Token::BoolState_r))
+			)
+			(Token::BoolState_r, Token::CreateLexerState
+					(Token::Character(Token::CreateChars('u')('U'), Token::InSet), Token::LexerOutput(Token::BoolState_u))
+			)
+			(Token::BoolState_u, Token::CreateLexerState
+					(Token::Character(Token::CreateChars('u')('U'), Token::InSet), Token::LexerOutput(Token::BoolState_e))
+			)
+			(Token::BoolState_e, Token::CreateLexerState
+					(Token::Character(Token::CreateChars('e')('E'), Token::InSet), Token::LexerOutput(Token::EndToken, Token::Bool))
+			)
+			(Token::BoolState_f, Token::CreateLexerState
+					(Token::Character(Token::CreateChars('a')('A'), Token::InSet), Token::LexerOutput(Token::BoolState_a))
+			)
+			(Token::BoolState_a, Token::CreateLexerState
+					(Token::Character(Token::CreateChars('l')('L'), Token::InSet), Token::LexerOutput(Token::BoolState_l))
+			)
+			(Token::BoolState_l, Token::CreateLexerState
+					(Token::Character(Token::CreateChars('s')('S'), Token::InSet), Token::LexerOutput(Token::BoolState_e))
+			)
+	;
 
 /**
  * Json grammar rules description
