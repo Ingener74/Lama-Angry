@@ -178,53 +178,14 @@ namespace common {
 }
 
 namespace json {
-
-//    bool any_of(const std::vector<char>& symbols, char sym) {
-//        std::vector<char>::const_iterator it = std::find(symbols.begin(), symbols.end(), sym);
-//        return it != symbols.end();
-//    }
-//
-//    bool all_of(const std::vector<char>& symbols, const std::string& string) {
-//        bool result = !string.empty();
-//        for (std::string::const_iterator ch = string.begin(); ch != string.end(); ++ch) {
-//            result &= any_of(symbols, *ch);
-//        }
-//        return result;
-//    }
-//
-//    bool isTrue(const std::string& string) {
-//        if (string.empty() || string.size() != 4)
-//            return false;
-//        return
-//                (string.at(0) == 'T' || string.at(0) == 't') &&
-//                (string.at(1) == 'R' || string.at(1) == 'r') &&
-//                (string.at(2) == 'U' || string.at(2) == 'u') &&
-//                (string.at(3) == 'E' || string.at(3) == 'e');
-//    }
-//    bool isFalse(const std::string& string) {
-//        if (string.empty() || string.size() != 5)
-//            return false;
-//        return
-//                (string.at(0) == 'F' || string.at(0) == 'f') &&
-//                (string.at(1) == 'A' || string.at(1) == 'a') &&
-//                (string.at(2) == 'L' || string.at(2) == 'l') &&
-//                (string.at(3) == 'S' || string.at(3) == 's') &&
-//                (string.at(4) == 'E' || string.at(4) == 'e');
-//    }
-//    typedef common::CreateVector<char> CreateSymTable;
-//    static std::vector<char> integer_ = CreateSymTable('0')('1')('2')('3')('4')('5')('6')('7')('8')('9')('-');
-//    static std::vector<char> float_ = CreateSymTable('0')('1')('2')('3')('4')('5')('6')('7')('8')('9')('.')('e')('E')('+')('-');
-//    static std::vector<char> true_ = CreateSymTable('t')('T')('r')('R')('u')('U')('e')('E');
-//    static std::vector<char> false_ = CreateSymTable('f')('F')('a')('A')('l')('L')('s')('S')('e')('E');
-
     namespace lexer {
         typedef int LexerStateRule;
         typedef int Type;
         typedef int Increment;
 
-    const LexerStateRule Initial = 0;
-    const Type Invalid = ~0;
-    const Type Skip = ~0 - 1;
+		const LexerStateRule Initial = 0;
+		const Type Invalid = ~0;
+		const Type Skip = ~0 - 1;
 
         struct Transition {
             LexerStateRule lexerState;
@@ -253,22 +214,15 @@ namespace json {
         };
 
         struct Token {
-            Token(Type type = Invalid, const std::string& value = std::string()) : type(type), value(value) {}
+			Token(Type type = Invalid, const std::string& value = std::string(), int startLine = -1, int endLine = -1, int startSymbol = -1, int endSymbol = -1)
+					: type(type), value(value), startLine(startLine), endLine(endLine), startSymbol(startSymbol),
+					  endSymbol(endSymbol)
+			{}
 
             friend std::ostream& operator<<(std::ostream& os, const Token& token) {
-//                static std::map<Type, std::string> tokenTypes =
-//                        common::CreateMap<Type, std::string>
-//                                (ObjectStart, "{")
-//                                (ObjectEnd, "}")
-//                                (ArrayStart, "[")
-//                                (ArrayEnd, "]")
-//                                (Semicolon, ":")
-//                                (Comma, ",")
-//                                (Integer, "Integer")
-//                                (Float, "Float")
-//                                (String, "String")
-//                                (Bool, "Bool");
-                return os << "type: " << token.type << (token.value.empty() ? "" : " value: " + token.value);
+                return os << "type: " << token.type << (token.value.empty() ? "" : " value: " + token.value)
+						  << "(" << token.startLine << ", " << token.endLine << ", "
+						  << token.startSymbol << ", " << token.endSymbol << ")";
             }
 
             Type type;
@@ -362,6 +316,8 @@ namespace json {
                 std::string token;
 				int line = 1;
 				int column = 0;
+				int prevLine = line;
+				int prevColumn = column;
                 for (std::string::const_iterator c = string.begin(); c != string.end(); ) {
 					if (*c == '\n'){
 						++line;
@@ -381,7 +337,9 @@ namespace json {
 						token.clear();
                     else {
                         if (lexerState.state == 0) {
-                            tokens.push_back(Token(static_cast<Type>(lexerState.token), token));
+                            tokens.push_back(Token(static_cast<Type>(lexerState.token), token, prevLine, line, prevColumn, column));
+							prevLine = line;
+							prevColumn = column;
                             token.clear();
                         }
                         currentState = lexerState.state;
@@ -409,62 +367,6 @@ namespace json {
         private:
             LexerStateMachine lexerStateMachine;
         };
-
-//        Tokens tokenize(const std::string& string) {
-//            Tokens tokens;
-//            int row = 0;
-//            int column = 0;
-//            for (std::string::const_iterator ch = string.begin(); ch != string.end(); ++ch) {
-//                if (*ch == '{') {
-//                    tokens.push_back(Token(ObjectStart));
-//                } else if (*ch == '}') {
-//                    tokens.push_back(Token(ObjectEnd));
-//                } else if (*ch == '[') {
-//                    tokens.push_back(Token(ArrayStart));
-//                } else if (*ch == ']') {
-//                    tokens.push_back(Token(ObjectEnd));
-//                } else if (*ch == ':') {
-//                    tokens.push_back(Token(Semicolon));
-//                } else if (*ch == ',') {
-//                    tokens.push_back(Token(Comma));
-//                } else if (*ch == '\"') {
-//                    std::string token;
-//                    while (*++ch != '\"')
-//                        token.push_back(*ch);
-//                    tokens.push_back(Token(String, token));
-//                } else if (any_of(integer_, *ch) || any_of(float_, *ch)) {
-//                    std::string token;
-//                    Type type = Integer;
-//                    bool isInteger;
-//                    bool isFloat;
-//                    do {
-//                        isInteger = any_of(integer_, *ch);
-//                        isFloat = any_of(float_, *ch);
-//                        if (isInteger || isFloat)
-//                            token.push_back(*ch++);
-//                        if (isInteger)
-//                            continue;
-//                        if (isFloat)
-//                            type = Float;
-//                    } while (isInteger || isFloat);
-//                    tokens.push_back(Token(type, token));
-//                    ch--;
-//                } else if (any_of(true_, *ch) || any_of(false_, *ch)) {
-//                    std::string token;
-//                    token.push_back(*ch++);
-//                    while(any_of(true_, *ch) || any_of(false_, *ch))
-//                        token.push_back(*ch++);
-//                    tokens.push_back(Token(Bool, isTrue(token) ? "true" : isFalse(token) ? "false" : throw std::runtime_error("something wrong, not true and not false")));
-//                    ch--;
-//                } else if(*ch == ' ' || *ch == '\t') {
-//                    column++;
-//                } else if(*ch == '\n') {
-//                    column = 0;
-//                    row++;
-//                } else throw std::runtime_error(common::xsnprintf(64, "invalid symbol %d", static_cast<int>(*ch)));
-//            }
-//            return tokens;
-//        }
 	}
 
     namespace lexer_rules {
