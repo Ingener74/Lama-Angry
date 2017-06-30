@@ -9,6 +9,7 @@
 #include <cstring>
 #include <sstream>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <algorithm>
@@ -239,6 +240,7 @@ namespace json {
             String,
             Bool,
             TypeCount,
+			Skip,
         };
         enum LexerStateRule {
             Initial,
@@ -252,15 +254,14 @@ namespace json {
             BoolState_a,
             BoolState_l,
             BoolState_s,
-            BoolState_e,
         };
         enum Condition {
             InSet,
             NotInSet,
         };
 
-        typedef int LexerStateRule_;
         typedef int Type_;
+        typedef int LexerStateRule_;
         typedef int Increment;
         struct Transition {
             LexerStateRule lexerState;
@@ -268,8 +269,8 @@ namespace json {
             bool putChar;
             Increment increment;
 
-            Transition(LexerStateRule lexerState = Initial, Type type = TypeCount, bool putChar = true) :
-                    lexerState(lexerState), type(type), putChar(putChar) {}
+            Transition(LexerStateRule lexerState = Initial, Type type = TypeCount, bool putChar = true, Increment increment = 1) :
+                    lexerState(lexerState), type(type), putChar(putChar), increment(increment) {}
         };
         struct Character {
             std::set<char> chars;
@@ -302,9 +303,13 @@ namespace json {
                         (Character(CreateChars(':')), Transition(Initial, Semicolon))
                         (Character(CreateChars(',')), Transition(Initial, Comma))
                         (Character(CreateChars('"')), Transition(StringState, TypeCount, false))
-                        (Character(CreateChars('+')('-')), Transition(IntegerState))
+                        (Character(CreateChars('+')('-')('0')('1')('2')('3')('4')('5')('6')('7')('8')('9')), Transition(IntegerState))
+                        (Character(CreateChars('.')), Transition(FloatState))
                         (Character(CreateChars('t')('T')), Transition(BoolState_t))
                         (Character(CreateChars('f')('F')), Transition(BoolState_f))
+                        (Character(CreateChars(' ')), Transition(Initial, Skip, false))
+                        (Character(CreateChars('\n')), Transition(Initial, Skip, false))
+                        (Character(CreateChars('\t')), Transition(Initial, Skip, false))
                 )
                 (StringState, CreateLexerStateRule
                         (Character(CreateChars('"'), NotInSet), Transition(StringState))
@@ -313,11 +318,11 @@ namespace json {
                 (IntegerState, CreateLexerStateRule
                         (Character(CreateChars('0')('1')('2')('3')('4')('5')('6')('7')('8')('9')), Transition(IntegerState))
                         (Character(CreateChars('.')('e')('E')), Transition(FloatState))
-                        (Character(CreateChars('0')('1')('2')('3')('4')('5')('6')('7')('8')('9')('.')('e')('E'), NotInSet), Transition(Initial, Integer))
+                        (Character(CreateChars('0')('1')('2')('3')('4')('5')('6')('7')('8')('9')('.')('e')('E'), NotInSet), Transition(Initial, Integer, false, 0))
                 )
                 (FloatState, CreateLexerStateRule
-                        (Character(CreateChars('0')('1')('2')('3')('4')('5')('6')('7')('8')('9')('.')('e')('E')), Transition(FloatState))
-                        (Character(CreateChars('0')('1')('2')('3')('4')('5')('6')('7')('8')('9')('.')('e')('E'), NotInSet), Transition(Initial, Float))
+                        (Character(CreateChars('0')('1')('2')('3')('4')('5')('6')('7')('8')('9')('.')('e')('E')('+')('-')), Transition(FloatState))
+                        (Character(CreateChars('0')('1')('2')('3')('4')('5')('6')('7')('8')('9')('.')('e')('E')('+')('-'), NotInSet), Transition(Initial, Float, false, 0))
                 )
                 (BoolState_t, CreateLexerStateRule
                         (Character(CreateChars('r')('R')), Transition(BoolState_r))
@@ -326,7 +331,7 @@ namespace json {
                         (Character(CreateChars('u')('U')), Transition(BoolState_u))
                 )
                 (BoolState_u, CreateLexerStateRule
-                        (Character(CreateChars('u')('U')), Transition(BoolState_e))
+                        (Character(CreateChars('e')('E')), Transition(Initial, Bool))
                 )
                 (BoolState_f, CreateLexerStateRule
                         (Character(CreateChars('a')('A')), Transition(BoolState_a))
@@ -338,9 +343,6 @@ namespace json {
                         (Character(CreateChars('s')('S')), Transition(BoolState_s))
                 )
                 (BoolState_s, CreateLexerStateRule
-                        (Character(CreateChars('e')('E')), Transition(BoolState_e))
-                )
-                (BoolState_e, CreateLexerStateRule
                         (Character(CreateChars('e')('E')), Transition(Initial, Bool))
                 )
         ;
@@ -375,14 +377,17 @@ namespace json {
             int state;
             bool putChar;
             int token;
+			int increment;
 
-            LexerState(int state = -1, bool putChar = true, int token = -1) : state(state), putChar(putChar),
-                                                                              token(token) {}
+            LexerState(int state = -1, bool putChar = true, int token = -1, int increment = 1) :
+					state(state), putChar(putChar), token(token), increment(increment)
+			{}
 
             friend bool operator==(const LexerState &lhs, const LexerState &rhs) {
                 return lhs.state == rhs.state &&
                        lhs.putChar == rhs.putChar &&
-                       lhs.token == rhs.token;
+                       lhs.token == rhs.token &&
+						lhs.increment == rhs.increment;
             }
 
             friend bool operator!=(const LexerState &lhs, const LexerState &rhs) {
@@ -390,7 +395,7 @@ namespace json {
             }
 
             friend std::ostream &operator<<(std::ostream &os, const LexerState &state) {
-                return os << "[" << state.state << ", " << state.putChar << ", " << state.token << "]";
+                return os << "[" << std::setw(3) << state.state << ", " << std::setw(3) << state.putChar << ", " << std::setw(3) << state.token << "]";
             }
         };
 
@@ -404,34 +409,33 @@ namespace json {
 
                 for (LexerStateMachineRules::const_iterator rule = lexerStateMachineRules.begin(); rule != lexerStateMachineRules.end(); ++rule) {
                     std::vector<LexerState> lexerState;
-                    char newSize = std::numeric_limits<char>::max();
-                    lexerState.resize(newSize);
+                    lexerState.resize(static_cast<size_t>(std::numeric_limits<char>::max()));
 
                     for (LexerStateTransitions::const_iterator transition = rule->second.begin(); transition != rule->second.end(); ++transition) {
-                        if (transition->first.condition == InSet) {
+						const LexerState& newState = LexerState(transition->second.lexerState,
+																transition->second.putChar,
+																transition->second.type == TypeCount ? -1
+																									 : transition->second.type,
+																transition->second.increment);
+
+						if (transition->first.condition == InSet) {
                             for (std::set<char>::const_iterator c = transition->first.chars.begin(); c != transition->first.chars.end(); ++c) {
-                                if (lexerState.at(*c) != LexerState())
+                                LexerState& state = lexerState.at(*c);
+                                if (state != LexerState())
                                     throw std::runtime_error("lexer rule is ambiguous");
                                 if (*c > lexerState.size())
                                     throw std::runtime_error("invalid data type");
-                                lexerState.at(*c) = LexerState(transition->second.lexerState,
-                                                               transition->second.putChar,
-                                                               transition->second.type == TypeCount ? -1
-                                                                                                    : transition->second.type);
+                                state = newState;
                             }
                         } else {
-
                             for (char c = 0; c < std::numeric_limits<char>::max(); ++c) {
-
                                 std::set<char>::iterator character = transition->first.chars.find(c);
-                                if (character != transition->first.chars.end()) {
-                                    if (lexerState.at(static_cast<size_t>(c)) != LexerState())
+                                if (character == transition->first.chars.end()) {
+                                    size_t n = static_cast<size_t>(c);
+                                    if (lexerState.at(n) != LexerState())
                                         throw std::runtime_error("lexer rule is ambiguous");
+                                    lexerState.at(n) = newState;
                                 }
-
-                            }
-
-                            for (std::vector<LexerState>::iterator lexerStateElem = lexerState.begin(); lexerStateElem != lexerState.end(); ++lexerStateElem) {
                             }
                         }
                     }
@@ -444,22 +448,38 @@ namespace json {
                 int currentState = 0;
                 Tokens tokens;
                 std::string token;
-                for (std::string::const_iterator c = string.begin(); c != string.end(); ++c) {
-                    LexerState lexerState = lexerStateMachine.at(static_cast<size_t>(currentState)).at(
-                            static_cast<size_t>(*c));
+				int line = 1;
+				int column = 0;
+                for (std::string::const_iterator c = string.begin(); c != string.end(); ) {
+					if (*c == '\n'){
+						++line;
+						column = 0;
+					}
+					if (*c != '\n')
+						++column;
+                    LexerState lexerState = lexerStateMachine.
+							at(static_cast<size_t>(currentState)).
+							at(static_cast<size_t>(*c));
+
                     if (lexerState.putChar)
                         token.push_back(*c);
                     if (lexerState.state == -1)
-                        throw std::runtime_error("invalid state in lexer state machine");
+                        throw std::runtime_error(common::xsnprintf(64, "invalid char \"%c\" at %d:%d", *c, line, column));
+					else if (lexerState.token == lexer::Skip)
+						token.clear();
                     else {
-                        if (lexerState.state == 0)
+                        if (lexerState.state == 0) {
                             tokens.push_back(Token(static_cast<Type>(lexerState.token), token));
+                            token.clear();
+                        }
                         currentState = lexerState.state;
                     }
+					c += lexerState.increment;
                 }
+                return tokens;
             }
 
-            friend std::ostream &operator<<(std::ostream &os, const Lexer &lexer) {
+            friend std::ostream& operator<<(std::ostream& os, Lexer const& lexer) {
                 os << "LexerStateMachine: \n";
                 for (LexerStateMachine::const_iterator lexerState = lexer.lexerStateMachine.begin(); lexerState != lexer.lexerStateMachine.end(); ++lexerState) {
                     if (lexerState != lexer.lexerStateMachine.begin())
@@ -533,13 +553,7 @@ namespace json {
             }
             return tokens;
         }
-
-        Tokens tokenize2(std::string const& string) {
-            LexerStateRule lexerState = Initial;
-            for (std::string::const_iterator ch = string.begin(); ch != string.end(); ++ch) {
-            }
-        }
-    }
+	}
 
 
 /**
@@ -876,6 +890,11 @@ public:                                         \
 
     Json parse(std::string const& string) {
         lexer::Tokens tokens = jsonLexer.analize(string);
+
+        for (lexer::Tokens::const_iterator it = tokens.begin(); it != tokens.end(); ++it) {
+            std::cout << *it << std::endl;
+        }
+
         return Json();
     }
 }
@@ -912,9 +931,23 @@ int main() {
 
             const char * js1 = "{}";
             const char * js2 = "{\"test\": 42}";
+            const char * js3 = "{\n"
+				"\t\"Integer\": 42,\n"
+				"\t\"Integer\": +42,\n"
+				"\t\"Integer\": -42,\n"
+				"\t\"Float\": 3.1415,\n"
+				"\t\"Float\": .14e5,\n"
+				"\t\"Float\": 6.67-e11,\n"
+				"\t\"Float\": 2.71828,\n"
+				"\t\"String\": \"String\",\n"
+				"\t\"BoolFalse\": false,\n"
+				"\t\"BoolTrue\": True,\n"
+				"\t\"Object\": {\"TestInObject\": 52},\n"
+				"\t\"Array\": [\"TestInArray\"]\n"
+			"}\n";
 
             std::cout << json::jsonLexer << std::endl;
-            json::Json js = json::parse(js1);
+            json::Json js = json::parse(js3);
         }
 
         std::cout << json::Object()
