@@ -66,7 +66,7 @@ namespace common {
             return std::numeric_limits<size_type>::max() / sizeof(T);
         }
 
-        void construct(pointer p, const T& t) {
+        void construct(pointer p, T const& t) {
             new(p) T(t);
         }
         void destroy(pointer p) {
@@ -82,11 +82,11 @@ namespace common {
     private:
         std::map<K, V> map;
     public:
-        make_map(const K& key, const V& val) {
+        make_map(K const& key, V const& val) {
             map[key] = val;
         }
 
-        make_map<K, V>& operator()(const K& key, const V& val) {
+        make_map<K, V>& operator()(K const& key, V const& val) {
             map[key] = val;
             return *this;
         }
@@ -99,11 +99,11 @@ namespace common {
     template<typename T>
     class make_vector {
     public:
-        make_vector(const T& t) {
+        make_vector(T const& t) {
             v.push_back(t);
         }
 
-        make_vector& operator()(const T& t) {
+        make_vector& operator()(T const& t) {
             v.push_back(t);
             return *this;
         }
@@ -164,190 +164,270 @@ namespace common {
     };
 }
 
-namespace json {
-    namespace lexer {
-        typedef int RuleId;
-        typedef int TokenId;
-        typedef int Increment;
+namespace lexer {
+    typedef int RuleId;
+    typedef int TokenId;
+    typedef int Increment;
 
-        const RuleId Initial = 0;
-        const TokenId Invalid = ~0;
-        const TokenId Skip = ~0 - 1;
+    const RuleId Initial = 0;
+    const RuleId InvalidRule = ~0;
+    const TokenId InvalidToken = ~0;
+    const TokenId Skip = ~0 - 1;
 
-        struct Transition {
-            RuleId ruleId;
-            bool putChar;
-            TokenId tokenId;
-            Increment increment;
+    struct Transition {
+        RuleId ruleId;
+        TokenId tokenId;
+        bool putChar;
+        Increment increment;
 
-            Transition(RuleId ruleId = Initial, bool putChar = true, TokenId tokenId = Invalid, Increment increment = 1) :
-                    ruleId(ruleId), putChar(putChar), tokenId(tokenId), increment(increment) {}
+        Transition(RuleId ruleId = InvalidRule, TokenId tokenId = InvalidToken, bool putChar = true, Increment increment = 1) :
+                ruleId(ruleId), tokenId(tokenId), putChar(putChar), increment(increment){}
 
-            friend bool operator==(Transition const& lhs, Transition const& rhs) {
-                return lhs.ruleId == rhs.ruleId &&
-                       lhs.putChar == rhs.putChar &&
-                       lhs.tokenId == rhs.tokenId &&
-                       lhs.increment == rhs.increment;
-            }
+        friend bool operator==(Transition const& lhs, Transition const& rhs) {
+            return lhs.ruleId == rhs.ruleId &&
+                   lhs.putChar == rhs.putChar &&
+                   lhs.tokenId == rhs.tokenId &&
+                   lhs.increment == rhs.increment;
+        }
 
-            friend bool operator!=(Transition const& lhs, Transition const& rhs) {
-                return !(rhs == lhs);
-            }
+        friend bool operator!=(Transition const& lhs, Transition const& rhs) {
+            return !(rhs == lhs);
+        }
 
-            friend std::ostream& operator<<(std::ostream& os, const Transition& transition) {
-                os << "["
-                   << transition.ruleId
-                   << ", " << transition.putChar
-                   << ", " << transition.tokenId
-                   << ", " << transition.increment
-                   << "]";
-                return os;
-            }
-        };
+        friend std::ostream& operator<<(std::ostream& os, const Transition& transition) {
+            os << "["
+               << transition.ruleId
+               << ", " << transition.putChar
+               << ", " << transition.tokenId
+               << ", " << transition.increment
+               << "]";
+            return os;
+        }
+    };
 
-        struct Condition {
-            std::string chars;
-            bool inSet;
+    struct Condition {
+        std::string chars;
+        bool inSet;
 
-            Condition(std::string const& chars = "", bool inSet = true) : chars(chars), inSet(inSet) {}
+        Condition(std::string const& chars = "", bool inSet = true) : chars(chars), inSet(inSet) {}
 
-            friend bool operator<(Condition const& lhs, Condition const& rhs) {
-                if (lhs.chars < rhs.chars)
-                    return true;
-                if (rhs.chars < lhs.chars)
-                    return false;
-                return lhs.inSet < rhs.inSet;
-            }
-        };
+        friend bool operator<(Condition const& lhs, Condition const& rhs) {
+            if (lhs.chars < rhs.chars)
+                return true;
+            if (rhs.chars < lhs.chars)
+                return false;
+            return lhs.inSet < rhs.inSet;
+        }
+    };
 
-        struct Token {
-            Token(TokenId tokenId = Invalid, std::string const& value = std::string(),
-                  int startLine = -1, int endLine = -1, int startSymbol = -1, int endSymbol = -1)
-                    : tokenId(tokenId), value(value),
-                      startLine(startLine), endLine(endLine), startSymbol(startSymbol), endSymbol(endSymbol) {}
+    struct Token {
+        Token(TokenId tokenId = InvalidToken, std::string const& value = std::string(),
+              int startLine = -1, int endLine = -1, int startSymbol = -1, int endSymbol = -1)
+                : tokenId(tokenId), value(value),
+                  startLine(startLine), endLine(endLine), startSymbol(startSymbol), endSymbol(endSymbol) {}
 
-            friend std::ostream& operator<<(std::ostream& os, Token const& token) {
-                return os << "("
-                          << std::setw(3) << token.startLine << ", "
-                          << std::setw(3) << token.endLine << ", "
-                          << std::setw(3) << token.startSymbol << ", "
-                          << std::setw(3) << token.endSymbol << "), "
-                          << "tokenId: " << token.tokenId << ", "
-                          << (token.value.empty() ? "" : " value: " + token.value)
-                          ;
-            }
+        friend std::ostream& operator<<(std::ostream& os, Token const& token) {
+            return os << "("
+                      << std::setw(3) << token.startLine << ", "
+                      << std::setw(3) << token.endLine << ", "
+                      << std::setw(3) << token.startSymbol << ", "
+                      << std::setw(3) << token.endSymbol << "), "
+                      << "tokenId: " << token.tokenId << ", "
+                      << (token.value.empty() ? "" : " value: " + token.value)
+                    ;
+        }
 
-            TokenId tokenId;
-            std::string value;
-            int startLine, endLine, startSymbol, endSymbol;
-        };
+        TokenId tokenId;
+        std::string value;
+        int startLine, endLine, startSymbol, endSymbol;
+    };
 
-        typedef std::vector<Token> Tokens;
+    typedef std::vector<Token> Tokens;
 
-        typedef std::map<Condition, Transition> LexerRule;
-        typedef std::map<RuleId, LexerRule> LexerRules;
+    typedef std::map<Condition, Transition> LexerRule;
+    typedef std::map<RuleId, LexerRule> LexerRules;
 
-        typedef std::vector<std::vector<Transition> > LexerStateMachine;
+    typedef std::vector<std::vector<Transition> > LexerStateMachine;
 
-        class Lexer {
-        public:
-            Lexer(LexerRules const &lexerRules) {
-                lexerStateMachine.resize(lexerRules.size());
+    class Lexer {
+    public:
+        Lexer(LexerRules const &lexerRules) {
+            lexerStateMachine.resize(lexerRules.size());
 
-                for_each_c (LexerRules, lexerRules, rule) {
-                    std::vector<Transition> lexerState;
+            size_t maxChar = std::numeric_limits<uint8_t>::max();
 
-                    lexerState.resize(static_cast<size_t>(std::numeric_limits<char>::max()));
+            for_each_c (LexerRules, lexerRules, rule) {
+                std::vector<Transition> lexerState;
 
-                    for_each_c (LexerRule, rule->second, transition) {
-                        if (transition->first.inSet) {
-                            for_each_c (std::string, transition->first.chars, c) {
-                                Transition &state = lexerState.at(*c);
-                                if (state != Transition())
-                                    throw std::runtime_error("lexer rule is ambiguous");
-                                if (*c > lexerState.size())
-                                    throw std::runtime_error("invalid data tokenId");
-                                state = transition->second;
-                            }
-                        } else {
-                            for (char c = 0; c < std::numeric_limits<char>::max(); ++c) {
-                                std::string::iterator character = std::find(transition->first.chars.begin(),
-                                                                            transition->first.chars.end(), c);
-                                if (character == transition->first.chars.end()) {
-                                    size_t n = static_cast<size_t>(c);
-                                    if (lexerState.at(n) != Transition())
-                                        throw std::runtime_error("lexer rule is ambiguous");
-                                    lexerState.at(n) = transition->second;
-                                }
-                            }
-                        }
-                    }
+                lexerState.resize(static_cast<size_t>(maxChar));
 
-                    lexerStateMachine.at(rule->first) = lexerState;
+                for_each_c (LexerRule, rule->second, transition) {
+                    if (transition->first.inSet)
+                        for_each_c (std::string, transition->first.chars, c)
+                            updateTransition(lexerState, transition->second, *c);
+                    else
+                        for (char c = 0; c < maxChar; ++c)
+                            if (std::find(transition->first.chars.begin(),
+                                          transition->first.chars.end(), c) == transition->first.chars.end())
+                                updateTransition(lexerState, transition->second, c);
                 }
+
+                lexerStateMachine.at(static_cast<size_t>(rule->first)) = lexerState;
             }
+        }
 
-            Tokens analize(std::string const& string) {
-                int currentState = 0;
-                Tokens tokens;
-                std::string token;
-                int line = 1;
-                int column = 0;
-                int prevLine = line;
-                int prevColumn = column;
-                for (std::string::const_iterator c = string.begin(); c != string.end();) {
-                    if (*c == '\n') {
-                        ++line;
-                        column = 0;
-                    } else {
-                        ++column;
-                    }
-                    Transition lexerState = lexerStateMachine.
-                            at(static_cast<size_t>(currentState)).
-                            at(static_cast<size_t>(*c));
+        Tokens analize(std::string const& string) {
+            int currentState = 0;
+            Tokens tokens;
+            std::string token;
+            int line = 1;
+            int column = 0;
+            int prevLine = line;
+            int prevColumn = column;
+            for (std::string::const_iterator c = string.begin(); c != string.end();) {
+                if (*c == '\n') {
+                    ++line;
+                    column = 0;
+                } else {
+                    ++column;
+                }
+                Transition lexerState = lexerStateMachine.
+                        at(static_cast<size_t>(currentState)).
+                        at(static_cast<size_t>(*c));
 
-                    if (lexerState.putChar)
-                        token.push_back(*c);
-                    if (lexerState.ruleId == -1)
-                        throw std::runtime_error(common::xsnprintf(64, "invalid char \"%c\" at %d:%d", *c, line, column));
-                    else if (lexerState.tokenId == Skip) {
-                        token.clear();
+                if (lexerState.putChar)
+                    token.push_back(*c);
+
+                if (lexerState.ruleId == InvalidRule)
+                    throw std::runtime_error(common::xsnprintf(64, "invalid char \"%c\" at %d:%d", *c, line, column));
+                else {
+                    if (lexerState.ruleId == Initial) {
+                        if (lexerState.tokenId != Skip)
+                            tokens.push_back(Token(static_cast<TokenId>(lexerState.tokenId), token, prevLine, line, prevColumn, column));
                         prevLine = line;
                         prevColumn = column;
-                    } else {
-                        if (lexerState.ruleId == Initial) {
-                            tokens.push_back(Token(static_cast<TokenId>(lexerState.tokenId), token, prevLine, line, prevColumn, column));
-                            prevLine = line;
-                            prevColumn = column;
-                            token.clear();
-                        }
-                        currentState = lexerState.ruleId;
+                        token.clear();
                     }
-                    c += lexerState.increment;
+                    currentState = lexerState.ruleId;
                 }
-                return tokens;
+                c += lexerState.increment;
             }
+            return tokens;
+        }
 
-            friend std::ostream& operator<<(std::ostream& os, Lexer const& lexer) {
-                os << "LexerStateMachine: \n";
-                for_each_c (LexerStateMachine, lexer.lexerStateMachine, lexerState) {
-                    if (lexerState != lexer.lexerStateMachine.begin()) os << "\n";
-                    for_each_c (std::vector<Transition>, (*lexerState), it) {
-                        if (it != (*lexerState).begin()) os << ", ";
-                        os << *it;
-                    }
+        friend std::ostream& operator<<(std::ostream& os, Lexer const& lexer) {
+            os << "LexerStateMachine: \n";
+            for_each_c (LexerStateMachine, lexer.lexerStateMachine, lexerState) {
+                if (lexerState != lexer.lexerStateMachine.begin()) os << "\n";
+                for_each_c (std::vector<Transition>, (*lexerState), it) {
+                    if (it != (*lexerState).begin()) os << ", ";
+                    os << *it;
                 }
-                os << "\n";
-                return os;
             }
+            os << "\n";
+            return os;
+        }
 
-        private:
-            LexerStateMachine lexerStateMachine;
-        };
+    private:
+        void updateTransition(std::vector<Transition>& lexerState, Transition const& transition, char symbol) {
+            Transition &state = lexerState.at(static_cast<size_t>(symbol));
+            if (state != Transition())
+                throw std::runtime_error("lexer rule is ambiguous");
+            state = transition;
+        }
+
+    private:
+        LexerStateMachine lexerStateMachine;
+    };
+}
+
+namespace parser {
+    typedef int NonTerminalId;
+
+    typedef std::vector<int> Items;
+    typedef std::vector<Items> Variants;
+    typedef std::map<NonTerminalId, Variants> Rules;
+
+    typedef common::make_map<NonTerminalId, Variants> MakeRules;
+    typedef common::make_vector<Items> MakeItems;
+    typedef common::make_vector<int> MakeVariant;
+
+    enum Action {
+        Shift,
+        Reduce,
+        Error,
+        Accept,
+    };
+
+    typedef int State;
+
+    const State StartState = 0;
+    const NonTerminalId StartNonTerminal = 0;
+
+    struct ActionState {
+        Action action;
+        State state;
+
+        ActionState(Action action = Error, State state = StartState) : action(action), state(state){}
+    };
+    typedef std::vector<std::vector<ActionState> > States;
+
+    struct Production {
+        NonTerminalId nonTerminal;
+        std::vector<Production> productions;
+        bool isProduction;
+        lexer::Token terminal;
+
+        Production(NonTerminalId nonTerminal = StartNonTerminal,
+                   std::vector<Production> const& productions = std::vector<Production>(),
+                   bool isProduction = true, lexer::Token const& terminal = lexer::InvalidToken) :
+                nonTerminal(nonTerminal), productions(productions), isProduction(isProduction), terminal(terminal) {}
+    };
+
+    class Parser {
+    public:
+        Parser(Rules const& rules = Rules()) {
+            buildActionAndGotoTables();
+        }
+
+        Production parse(lexer::Tokens const& tokens) {
+            std::vector<int> stack;
+            for (lexer::Tokens::const_iterator tokenIt = tokens.begin(); tokenIt != tokens.end(); ++tokenIt) {
+                ActionState actionState = action(*tokenIt);
+                if (actionState.action == Shift) {
+
+                } else if (actionState.action == Reduce) {
+
+                } else if (actionState.action == Error) {
+
+                } else if (actionState.action == Accept) {
+
+                }
+            }
+            Production ast;
+            return ast;
+        }
+
+    private:
+        void buildActionAndGotoTables() {
+        }
+
+        ActionState action(lexer::Token const& token) {
+            return ActionState(Shift, StartState);
+        }
+
+    int goTo() {
     }
 
+    private:
+        States actionTable;
+        int goToTable;
+    };
+}
+
+namespace json {
     namespace rules {
-        enum TokenType {
+        enum Terminals {
             ObjectStart,
             ObjectEnd,
             ArrayStart,
@@ -359,7 +439,7 @@ namespace json {
             String,
             Bool,
         };
-        enum LexerStateRule {
+        enum LexerRule {
             Initial,
             IntegerState,
             FloatState,
@@ -388,7 +468,7 @@ namespace json {
                         (Condition("]"), Transition(Initial, ArrayEnd))
                         (Condition(":"), Transition(Initial, Semicolon))
                         (Condition(","), Transition(Initial, Comma))
-                        (Condition("\""), Transition(StringState, lexer::Invalid, false))
+                        (Condition("\""), Transition(StringState, lexer::InvalidToken, false))
                         (Condition("+-0123456789"), Transition(IntegerState))
                         (Condition("."), Transition(FloatState))
                         (Condition("tT"), Transition(BoolState_t))
@@ -432,20 +512,7 @@ namespace json {
                         (Condition("eE"), Transition(Initial, Bool))
                 )
         ;
-    }
-/**
- * Json grammar rules description
- *
- * Json    ::= Object | Array
- * Object  ::= ObjectStart, Records, ObjectEnd | ObjectStart, ObjectEnd
- * Array   ::= ArrayStart, Values, ArrayEnd | ArrayStart, ArrayEnd
- * Values  ::= Value, Comma, Values | Value
- * Value   ::= Integer | String | FLoat | Bool | Array | Object
- * Records ::= Record, Comma, Records | Record
- * Record  ::= String, Semicolon, Value
- */
 
-    struct Parser {
         enum NonTerminals {
             Json = 100,
             Object,
@@ -456,95 +523,56 @@ namespace json {
             Value,
         };
 
-        enum Action {
-            Shift,
-            Reduce,
-            Error,
-            Accept,
-        };
+        typedef parser::Rules Rules;
+        typedef parser::MakeRules MakeRules;
+        typedef parser::MakeItems MakeItems;
+        typedef parser::MakeVariant MakeVariant;
 
-        struct ActionState {
-            Action action;
-            int state;
-
-            ActionState(Action action, int state) : action(action), state(state){}
-        };
-
-        typedef std::vector<std::vector<ActionState> > States;
-
-        typedef std::vector<int> Items;
-        typedef std::vector<Items> Variants;
-        typedef std::map<NonTerminals, Variants> Rules;
-
-        typedef common::make_map<NonTerminals, Variants> CreateRules;
-        typedef common::make_vector<Items> CreateItems;
-        typedef common::make_vector<int> CreateVariant;
-
-        static Rules jsonGrammarRules;
-
-        States actionTable;
-        int goToTable;
-
-        void buildActionAndGotoTables() {
-        }
-
-        void parse(lexer::Tokens const& tokens) {
-            std::vector<int> stack;
-            for (lexer::Tokens::const_iterator tokenIt = tokens.begin(); tokenIt != tokens.end(); ++tokenIt) {
-                ActionState actionState = action(*tokenIt);
-                if (actionState.action == Shift) {
-
-                } else if (actionState.action == Reduce) {
-
-                } else if (actionState.action == Error) {
-
-                } else if (actionState.action == Accept) {
-
-                }
-            }
-        }
-
-        ActionState action(lexer::Token const& token) {
-            return ActionState(Shift, 0);
-        }
-
-        int goTo() {
-        }
-    };
-
-    Parser::Rules Parser::jsonGrammarRules = CreateRules
-            (Json, CreateItems
-                    (CreateVariant(Object))
-                    (CreateVariant(Array))
-            )
-            (Object, CreateItems
-                    (CreateVariant(rules::ObjectStart)(Records)(rules::ObjectEnd))
-                    (CreateVariant(rules::ObjectStart)(rules::ObjectEnd))
-            )
-            (Array, CreateItems
-                    (CreateVariant(rules::ArrayStart)(Values)(rules::ArrayEnd))
-                    (CreateVariant(rules::ArrayStart)(rules::ArrayEnd))
-            )
-            (Records, CreateItems
-                    (CreateVariant(Record)(rules::Comma)(Records))
-                    (CreateVariant(Record))
-            )
-            (Record, CreateItems
-                    (CreateVariant(rules::String)(rules::Semicolon)(Value))
-            )
-            (Values, CreateItems
-                    (CreateVariant(Value)(rules::Comma)(Values))
-                    (CreateVariant(Value))
-            )
-            (Value, CreateItems
-                    (CreateVariant(Object))
-                    (CreateVariant(Array))
-                    (CreateVariant(rules::String))
-                    (CreateVariant(rules::Float))
-                    (CreateVariant(rules::Integer))
-                    (CreateVariant(rules::Bool))
-            )
-    ;
+        /**
+         * Json grammar rules description
+         *
+         * Json    ::= Object | Array
+         * Object  ::= ObjectStart, Records, ObjectEnd | ObjectStart, ObjectEnd
+         * Array   ::= ArrayStart, Values, ArrayEnd | ArrayStart, ArrayEnd
+         * Values  ::= Value, Comma, Values | Value
+         * Value   ::= Integer | String | FLoat | Bool | Array | Object
+         * Records ::= Record, Comma, Records | Record
+         * Record  ::= String, Semicolon, Value
+         */
+        static Rules jsonGrammarRules = MakeRules
+                (Json, MakeItems
+                        (MakeVariant(Object))
+                        (MakeVariant(Array))
+                )
+                (Object, MakeItems
+                        (MakeVariant(ObjectStart)(Records)(ObjectEnd))
+                        (MakeVariant(ObjectStart)(ObjectEnd))
+                )
+                (Array, MakeItems
+                        (MakeVariant(ArrayStart)(Values)(ArrayEnd))
+                        (MakeVariant(ArrayStart)(ArrayEnd))
+                )
+                (Records, MakeItems
+                        (MakeVariant(Record)(Comma)(Records))
+                        (MakeVariant(Record))
+                )
+                (Record, MakeItems
+                        (MakeVariant(String)(Semicolon)(Value))
+                )
+                (Values, MakeItems
+                        (MakeVariant(Value)(Comma)(Values))
+                        (MakeVariant(Value))
+                )
+                (Value, MakeItems
+                        (MakeVariant(Object))
+                        (MakeVariant(Array))
+                        (MakeVariant(String))
+                        (MakeVariant(Float))
+                        (MakeVariant(Integer))
+                        (MakeVariant(Bool))
+                )
+        ;
+    }
 
     class Type {
     public:
@@ -558,8 +586,7 @@ namespace json {
     class String : public Type {
     public:
         String(std::string const& value) : value(value){}
-        virtual Type* clone() const
-        {
+        virtual Type* clone() const {
             return new String(*this);
         }
         virtual std::string stringify() const {
@@ -573,8 +600,7 @@ namespace json {
     class Float : public Type {
     public:
         Float(double value) : value(value){}
-        virtual Type* clone() const
-        {
+        virtual Type* clone() const {
             return new Float(*this);
         }
         virtual std::string stringify() const {
@@ -588,8 +614,7 @@ namespace json {
     class Integer : public Type {
     public:
         Integer(int64_t value) : value(value){}
-        virtual Type* clone() const
-        {
+        virtual Type* clone() const {
             return new Integer(*this);
         }
         virtual std::string stringify() const {
@@ -627,56 +652,51 @@ namespace json {
             return new Object(*this);
         }
 
-        virtual std::string stringify() const
-        {
+        virtual std::string stringify() const {
             std::stringstream stream;
             stream << "{";
-            for (Fields::const_iterator it = fields.begin(); it != fields.end(); ++it) {
-                if (it != fields.begin()) {
-                    stream << ", ";
-                }
+            for_each_c (Fields, fields, it) {
+                if (it != fields.begin()) stream << ", ";
                 stream << "\"" << it->first << "\"" << ": " << it->second->stringify();
             }
             stream << "}";
             return stream.str();
         }
 
-        Object& operator()(const std::string& key, const std::string& v) { return add<String>(key, v); }
-        Object& operator()(const std::string& key, const char* v) { return add<String>(key, v); }
-        Object& operator()(const std::string& key, int64_t v) { return add<Integer>(key, v); }
-        Object& operator()(const std::string& key, int v) { return add<Integer>(key, static_cast<int64_t>(v)); }
-        Object& operator()(const std::string& key, bool v) { return add<Bool>(key, v); }
-        Object& operator()(const std::string& key, double v) { return add<Float>(key, v); }
-        Object& operator()(const std::string& key, const Object& v) { return add<Object>(key, v); }
-        Object& operator()(const std::string& key, const Array& v);
+        Object& operator()(std::string const& key, std::string const& v) { return add<String>(key, v); }
+        Object& operator()(std::string const& key, const char* v) { return add<String>(key, v); }
+        Object& operator()(std::string const& key, int64_t v) { return add<Integer>(key, v); }
+        Object& operator()(std::string const& key, int v) { return add<Integer>(key, static_cast<int64_t>(v)); }
+        Object& operator()(std::string const& key, bool v) { return add<Bool>(key, v); }
+        Object& operator()(std::string const& key, double v) { return add<Float>(key, v); }
+        Object& operator()(std::string const& key, Object const& v) { return add<Object>(key, v); }
+        Object& operator()(std::string const& key, Array const& v);
 
         template<typename T, typename V>
-        Object& add(const std::string& key, const V& v) {
+        Object& add(std::string const& key, V const& v) {
             json_assert(fields.insert(std::make_pair(key, new T(v))).second, "can't insert field");
             return *this;
         };
 
         template <typename T>
-        T* get(const std::string& key) {
+        T* get(std::string const& key) {
             Fields::iterator it = fields.find(key);
-            if (it == fields.end()) {
+            if (it == fields.end())
                 return NULL;
-            }
             T* t = it->second.dcast<T>();
             if (!t)
                 return NULL;
             return t;
         }
 
-        int64_t integerOr(const std::string& key, int64_t defaultValue = 0) {
+        int64_t integerOr(std::string const& key, int64_t defaultValue = 0) {
             Integer* integer = get<Integer>(key);
             if (!integer)
                 return defaultValue;
             return integer->value;
         }
 
-        friend std::ostream& operator<<(std::ostream& os, const Object& object)
-        {
+        friend std::ostream& operator<<(std::ostream& os, Object const& object) {
             return os << object.stringify();
         }
 
@@ -692,17 +712,17 @@ namespace json {
             return new Array(*this);
         }
 
-        Array& operator()(const std::string& v) { return add<String>(v); }
+        Array& operator()(std::string const& v) { return add<String>(v); }
         Array& operator()(const char* v) { return add<String>(v); }
         Array& operator()(int64_t v) { return add<Integer>(v); }
         Array& operator()(int v) { return add<Integer>(static_cast<int64_t>(v)); }
         Array& operator()(bool v) { return add<Bool>(v); }
         Array& operator()(double v) { return add<Float>(v); }
-        Array& operator()(const Object& v) { return add<Object>(v); }
-        Array& operator()(const Array& v) { return add<Array>(v); }
+        Array& operator()(Object const& v) { return add<Object>(v); }
+        Array& operator()(Array const& v) { return add<Array>(v); }
 
         template<typename T, typename V>
-        Array& add(const V& v) {
+        Array& add(V const& v) {
             fields.push_back(new T(v));
             return *this;
         };
@@ -725,9 +745,8 @@ namespace json {
         virtual std::string stringify() const {
             std::stringstream stream;
             stream << "[";
-            for (Fields::const_iterator it = fields.begin(); it != fields.end(); ++it) {
-                if (it != fields.begin())
-                    stream << ", ";
+            for_each_c (Fields, fields, it) {
+                if (it != fields.begin()) stream << ", ";
                 stream << (*it)->stringify();
             }
             stream << "]";
@@ -735,16 +754,14 @@ namespace json {
             return string;
         }
 
-        friend std::ostream& operator<<(std::ostream& os, const Array& array)
-        {
+        friend std::ostream& operator<<(std::ostream& os, Array const& array) {
             return os << array.stringify();
         }
 
         Fields fields;
     };
 
-    Object& Object::operator()(const std::string& key, const Array& v)
-    {
+    Object& Object::operator()(std::string const& key, Array const& v) {
         return add<Array>(key, v);
     }
 
@@ -753,7 +770,7 @@ namespace json {
 
     class Json {
     public:
-        Json() {}
+        Json(parser::Production ast) {}
 
         bool hasObject() const {
             return false;
@@ -763,28 +780,31 @@ namespace json {
             return false;
         }
 
-        Object const &getObject() const {
+        Object const& getObject() const {
         }
 
-        Array const &getArray() const {
+        Array const& getArray() const {
         }
     };
 
     lexer::Lexer jsonLexer(rules::lexerRules);
-
-    // lexer::Lexer jsonLexer(jsonLexerRules);
-    // parser::Parser jsonParser(jsonGrammarRules);
+    parser::Parser jsonParser(rules::jsonGrammarRules);
 
     Json parse(std::string const& string) {
         lexer::Tokens tokens = jsonLexer.analize(string);
-
-        // jsonParser.parse(tokens);
 
         for (lexer::Tokens::const_iterator it = tokens.begin(); it != tokens.end(); ++it) {
             std::cout << *it << std::endl;
         }
 
-        return Json();
+        parser::Production ast = jsonParser.parse(tokens);
+
+        return Json(ast);
+    }
+    Json parse(std::istream& stream) {
+        std::string string;
+        stream >> string;
+        return parse(string);
     }
 }
 
