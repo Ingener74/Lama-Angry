@@ -742,12 +742,19 @@ namespace json {
             return integer->value;
         }
 
+        std::string stringOr(size_t index, std::string const defaultValue = "") {
+            String* value = get<String>(index);
+            if (!value)
+                return defaultValue;
+            return value->value;
+        }
+
         virtual std::string stringify() const {
             std::stringstream stream;
             stream << "[";
-            for_each_c (Fields, fields, it) {
-                if (it != fields.begin()) stream << ", ";
-                stream << (*it)->stringify();
+            for_each_c (Fields, fields, field) {
+                if (field != fields.begin()) stream << ", ";
+                stream << (*field)->stringify();
             }
             stream << "]";
             std::string string = stream.str();
@@ -802,41 +809,20 @@ namespace json {
         return Json(ast);
     }
     Json parse(std::istream& stream) {
-        std::string string;
-        stream >> string;
-        return parse(string);
+        return parse(std::string(
+                std::istreambuf_iterator<char>(stream),
+                std::istreambuf_iterator<char>()
+        ));
     }
 }
 
 int main() {
     try {
-        const char* js1 = "{}";
-        const char* js2 = "{\"test\": 42}";
-        const char* js3 = "{"
-                "\"Pasha\": \"Xyu\", \n"
-                "\"Pi\": 3.1415, \n"
-                "\"meaningOfLife\": 42, \n"
-                "\"FuckingString\": \"Tra ta ta\", \n"
-                "\"MyHeartIsBroken\": True, \n"
-                "\t\"AllBad\": False\n"
-                "}";
-        const char *js4 = "{\n"
-                "\t\"Integer\": 42,\n"
-                "\t\"Integer\": +42,\n"
-                "\t\"Integer\": -42,\n"
-                "\t\"Float\": 3.1415,\n"
-                "\t\"Float\": .14e5,\n"
-                "\t\"Float\": 6.67-e11,\n"
-                "\t\"Float\": 2.71828,\n"
-                "\t\"String\": \"String\",\n"
-                "\t\"BoolFalse\": false,\n"
-                "\t\"BoolTrue\": True,\n"
-                "\t\"Object\": {\"TestInObject\": 52},\n"
-                "\t\"Array\": [\"TestInArray\"]\n"
-                "}\n";
+//        std::ofstream file("lexer_state_machine.txt");
+//        std::cout << json::jsonLexer << std::endl;
 
-        std::cout << json::jsonLexer << std::endl;
-        json::Json js = json::parse(js3);
+        std::ifstream file("../test.json");
+        json::Json js = json::parse(file);
 
         std::cout << json::Object()
                 ("Test String", "string")

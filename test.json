@@ -1,0 +1,10 @@
+{
+  "Num": 32,
+  "Real": 1.2e-3,
+  "Bool": true,
+  "String": "string",
+  "Obj": {
+    "TEST": "Test"
+  },
+  "Arr": [0, 2]
+}
