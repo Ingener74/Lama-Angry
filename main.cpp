@@ -145,8 +145,8 @@ namespace common {
         const T* operator->() const { return t ? t : throw std::runtime_error("pointer is null"); }
         operator T*() { return t; }
         template<typename U>
-        U* dcast() {
-            return dynamic_cast<U*>(t);
+        const U* dcast() const {
+            return dynamic_cast<const U*>(t);
         }
         XPtr(const XPtr& rhs) { *this = rhs; }
         XPtr& operator=(const XPtr& rhs) {
@@ -173,6 +173,11 @@ namespace lexer {
     const RuleId InvalidRule = ~0;
     const TokenId InvalidToken = ~0;
     const TokenId Skip = ~0 - 1;
+
+	struct LexerError: std::runtime_error {
+		LexerError(const std::string& __arg) : runtime_error(__arg)
+		{}
+	};
 
     struct Transition {
         RuleId ruleId;
@@ -228,10 +233,10 @@ namespace lexer {
 
         friend std::ostream& operator<<(std::ostream& os, Token const& token) {
             return os << "("
-                      << std::setw(3) << token.startLine << ", "
-                      << std::setw(3) << token.endLine << ", "
-                      << std::setw(3) << token.startSymbol << ", "
-                      << std::setw(3) << token.endSymbol << "), "
+                      << std::setw(2) << token.startLine << ", "
+                      << std::setw(2) << token.endLine << ", "
+                      << std::setw(2) << token.startSymbol << ", "
+                      << std::setw(2) << token.endSymbol << "), "
                       << "tokenId: " << token.tokenId << ", "
                       << (token.value.empty() ? "" : " value: " + token.value)
                     ;
@@ -277,7 +282,7 @@ namespace lexer {
         }
 
         Tokens analize(std::string const& string) {
-            int currentState = 0;
+            RuleId currentState = Initial;
             Tokens tokens;
             std::string token;
             int line = 1;
@@ -299,7 +304,7 @@ namespace lexer {
                     token.push_back(*c);
 
                 if (lexerState.ruleId == InvalidRule)
-                    throw std::runtime_error(common::xsnprintf(64, "invalid char \"%c\" at %d:%d", *c, line, column));
+                    throw LexerError(common::xsnprintf(64, "invalid char \"%c\" at %d:%d", *c, line, column));
                 else {
                     if (lexerState.ruleId == Initial) {
                         if (lexerState.tokenId != Skip)
@@ -332,7 +337,7 @@ namespace lexer {
         void updateTransition(std::vector<Transition>& lexerState, Transition const& transition, char symbol) {
             Transition &state = lexerState.at(static_cast<size_t>(symbol));
             if (state != Transition())
-                throw std::runtime_error("lexer rule is ambiguous");
+                throw LexerError("lexer rule is ambiguous");
             state = transition;
         }
 
@@ -363,6 +368,11 @@ namespace parser {
 
     const State StartState = 0;
     const NonTerminalId StartNonTerminal = 0;
+    const NonTerminalId Invalid = 0;
+
+	struct ParserError: std::runtime_error {
+		ParserError(const std::string& __arg) : runtime_error(__arg){}
+	};
 
     struct ActionState {
         Action action;
@@ -372,17 +382,45 @@ namespace parser {
     };
     typedef std::vector<std::vector<ActionState> > States;
 
+	class Node;
+	typedef std::vector<Node> Nodes;
+
     struct Production {
         NonTerminalId nonTerminal;
-        std::vector<Production> productions;
-        bool isProduction;
-        lexer::Token terminal;
+        std::vector<Node> nodes;
 
-        Production(NonTerminalId nonTerminal = StartNonTerminal,
-                   std::vector<Production> const& productions = std::vector<Production>(),
-                   bool isProduction = true, lexer::Token const& terminal = lexer::InvalidToken) :
-                nonTerminal(nonTerminal), productions(productions), isProduction(isProduction), terminal(terminal) {}
-    };
+		Production(NonTerminalId nonTerminal = Invalid, Nodes const& nodes = Nodes()) :
+				nonTerminal(nonTerminal), nodes(nodes) {}
+	};
+
+	typedef lexer::Token Token;
+	typedef lexer::Tokens Tokens;
+
+	class Node {
+	public:
+		Node(Production const& production) : isProduction(true), production(production)
+		{}
+
+		Node(Token const& token) : isProduction(false), token(token)
+		{}
+
+		bool isIsProduction() const {
+			return isProduction;
+		}
+
+		Production const& getProduction() const {
+			return production;
+		}
+
+		Token const& getToken() const {
+			return token;
+		}
+
+	private:
+		bool isProduction;
+		Production production;
+		Token token;
+	};
 
     class Parser {
     public:
@@ -390,22 +428,20 @@ namespace parser {
             buildActionAndGotoTables();
         }
 
-        Production parse(lexer::Tokens const& tokens) {
-            std::vector<int> stack;
-            for (lexer::Tokens::const_iterator tokenIt = tokens.begin(); tokenIt != tokens.end(); ++tokenIt) {
-                ActionState actionState = action(*tokenIt);
+        Node parse(lexer::Tokens const& tokens) {
+			Nodes stack;
+            for_each_c (Tokens, tokens, token) {
+                ActionState actionState = action(*token);
                 if (actionState.action == Shift) {
+					stack.push_back(Node(*token));
+				} else if (actionState.action == Reduce) {
 
-                } else if (actionState.action == Reduce) {
-
-                } else if (actionState.action == Error) {
-
-                } else if (actionState.action == Accept) {
-
-                }
+                } else if (actionState.action == Error)
+					throw ParserError("parser error");
+				else if (actionState.action == Accept)
+					return stack.size() == 1 ? stack.back() : throw ParserError("parser error");
             }
-            Production ast;
-            return ast;
+            throw ParserError("parser error");
         }
 
     private:
@@ -513,8 +549,21 @@ namespace json {
                 )
         ;
 
+        static std::map<Terminals, std::string> terminalsNames = common::make_map<Terminals, std::string>
+            (ObjectStart,  "ObjectStart" )
+            (ObjectEnd,    "ObjectEnd"   )
+            (ArrayStart,   "ArrayStart"  )
+            (ArrayEnd,     "ArrayEnd"    )
+            (Semicolon,    "Semicolon"   )
+            (Comma,        "Comma"       )
+            (Integer,      "Integer"     )
+            (Float,        "Float"       )
+            (String,       "String"      )
+            (Bool,         "Bool"        )
+        ;
+
         enum NonTerminals {
-            Json = 100,
+            Json,
             Object,
             Array,
             Records,
@@ -655,9 +704,9 @@ namespace json {
         virtual std::string stringify() const {
             std::stringstream stream;
             stream << "{";
-            for_each_c (Fields, fields, it) {
-                if (it != fields.begin()) stream << ", ";
-                stream << "\"" << it->first << "\"" << ": " << it->second->stringify();
+            for_each_c (Fields, fields, field) {
+                if (field != fields.begin()) stream << ", ";
+                stream << "\"" << field->first << "\"" << ": " << field->second->stringify();
             }
             stream << "}";
             return stream.str();
@@ -679,28 +728,45 @@ namespace json {
         };
 
         template <typename T>
-        T* get(std::string const& key) {
+        const T* get(std::string const& key) const {
             Fields::iterator it = fields.find(key);
             if (it == fields.end())
                 return NULL;
-            T* t = it->second.dcast<T>();
+            const T* t = it->second.dcast<T>();
             if (!t)
                 return NULL;
             return t;
         }
 
-        int64_t integerOr(std::string const& key, int64_t defaultValue = 0) {
-            Integer* integer = get<Integer>(key);
-            if (!integer)
+        template<typename T, typename V>
+        V valueOr(std::string const& key, V const& defaultValue = 0) {
+            const T* value = get<T>(key);
+            if (!value)
                 return defaultValue;
-            return integer->value;
+            return value->value;
+        }
+
+        int64_t integerOr(std::string const& key, int64_t defaultValue = 0) {
+            return valueOr<Integer>(key, defaultValue);
+        }
+
+        std::string stringOr(std::string const& key, std::string const& defaultValue = "") {
+            return valueOr<String>(key, defaultValue);
+        }
+
+        double floatOr(std::string const& key, double defaultValue = 0.0) {
+            return valueOr<Float>(key, defaultValue);
+        }
+
+        double boolOr(std::string const& key, bool defaultValue = false) {
+            return valueOr<Bool>(key, defaultValue);
         }
 
         friend std::ostream& operator<<(std::ostream& os, Object const& object) {
             return os << object.stringify();
         }
 
-        Fields fields;
+        mutable Fields fields;
     };
 
     class Array : public Type {
@@ -728,22 +794,22 @@ namespace json {
         };
 
         template <typename T>
-        T* get(size_t index) {
-            T* t = fields.at(index).dcast<T>();
+		const T* get(size_t index) {
+            const T* t = fields.at(index).dcast<T>();
             if (!t)
                 return NULL;
             return t;
         }
 
         int64_t integerOr(size_t index, int64_t defaultValue = 0) {
-            Integer* integer = get<Integer>(index);
+            const Integer* integer = get<Integer>(index);
             if (!integer)
                 return defaultValue;
             return integer->value;
         }
 
         std::string stringOr(size_t index, std::string const defaultValue = "") {
-            String* value = get<String>(index);
+            const String* value = get<String>(index);
             if (!value)
                 return defaultValue;
             return value->value;
@@ -772,26 +838,27 @@ namespace json {
         return add<Array>(key, v);
     }
 
-    void jsonParse(const char* json) {
-    }
-
-    class Json {
+	class Json {
     public:
-        Json(parser::Production ast) {}
+        Json(parser::Node ast) {}
 
         bool hasObject() const {
-            return false;
+            return json.dcast<Object>() != NULL;
         }
 
         bool hasArray() const {
-            return false;
+            return json.dcast<Array>() != NULL;
+		}
+
+        Object getObject() const {
+			return hasObject() ? *(json.dcast<Object>()) : Object();
         }
 
-        Object const& getObject() const {
+        Array getArray() const {
+			return hasArray() ? *(json.dcast<Array>()) : Array();
         }
 
-        Array const& getArray() const {
-        }
+		common::XPtr<Type> json;
     };
 
     lexer::Lexer jsonLexer(rules::lexerRules);
@@ -804,7 +871,7 @@ namespace json {
             std::cout << *it << std::endl;
         }
 
-        parser::Production ast = jsonParser.parse(tokens);
+        parser::Node ast = jsonParser.parse(tokens);
 
         return Json(ast);
     }
