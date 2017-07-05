@@ -15,6 +15,7 @@
 #include <algorithm>
 
 #define json_assert(cond, message) if(!(cond)) throw std::runtime_error(message);
+#define json_asserte(cond, exception_class, message) if(!(cond)) throw exception_class(message);
 #define json_assertx(cond, format, ...) if(!(cond)) throw std::runtime_error(xsnprintf(128, format, __VA_ARGS__));
 
 #define for_each(container_type, container_obj, iterator_name) \
@@ -168,6 +169,7 @@ namespace lexer {
     typedef int RuleId;
     typedef int TokenId;
     typedef int Increment;
+	typedef int Terminal;
 
     const RuleId Initial = 0;
     const RuleId InvalidRule = ~0;
@@ -382,6 +384,7 @@ namespace parser {
     struct ActionState {
         Action action;
         State state;
+        int productionsCount;
 
         ActionState(Action action = Error, State state = StartState) : action(action), state(state){}
     };
@@ -402,14 +405,17 @@ namespace parser {
     typedef lexer::Token Token;
     typedef lexer::Tokens Tokens;
 
+	typedef std::map<lexer::Terminal, std::string> TerminalNames;
+	typedef std::map<NonTerminalId, std::string> NonTerminalNames;
+
     class Node {
     public:
-        Node(Production const& production) : isProduction(true), production(production) {}
+        Node(Production const& production) : _isProduction(true), production(production) {}
 
-        Node(Token const& token) : isProduction(false), token(token) {}
+        Node(Token const& token) : _isProduction(false), token(token) {}
 
-        bool isIsProduction() const {
-            return isProduction;
+        bool isProduction() const {
+            return _isProduction;
         }
 
         Production const& getProduction() const {
@@ -420,8 +426,44 @@ namespace parser {
             return token;
         }
 
-    private:
-        bool isProduction;
+		static std::string indent2string(int indent = 0) {
+			std::stringstream stream;
+			while(indent--)
+				stream << "    ";
+			return stream.str();
+		}
+
+		static std::string to_string(int i) {
+			std::stringstream stream;
+			stream << i;
+			return stream.str();
+		}
+
+		std::string stringify(TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent = 0) const {
+			std::stringstream stream;
+			std::string indentation = indent2string(indent);
+			if (_isProduction) {
+				NonTerminalNames::const_iterator nonTerminalNameIt = nonTerminalNames.find(production.nonTerminal);
+				stream << indentation
+					   << (nonTerminalNameIt == nonTerminalNames.end() ? to_string(production.nonTerminal)
+																	   : nonTerminalNameIt->second) << ": {\n";
+				for_each_c(Nodes, production.nodes, node) {
+					stream << node->stringify(terminalNames, nonTerminalNames, indent + 1);
+				}
+				stream << indentation << "}\n";
+			} else {
+				TerminalNames::const_iterator terminalNameIt = terminalNames.find(token.tokenId);
+				stream << indentation
+					   << (terminalNameIt == terminalNames.end() ? to_string(token.tokenId) : terminalNameIt->second)
+					   << ": {\n";
+				stream << indentation << token.value << "\n";
+				stream << indentation << "}\n";
+			}
+			return stream.str();
+		}
+
+	private:
+        bool _isProduction;
         Production production;
         Token token;
     };
@@ -438,13 +480,19 @@ namespace parser {
                 if (actionState.action == Shift) {
                     stack.push_back(Node(*token));
                 } else if (actionState.action == Reduce) {
-
+                    Nodes nodes;
+                    Nodes::iterator start = stack.begin() + (stack.size() - actionState.productionsCount);
+                    std::copy(start,
+                              stack.end(),
+                              std::back_inserter(nodes));
+                    nodes.erase(start, stack.end());
+                    stack.push_back(Node(Production(actionState.state, nodes)));
                 } else if (actionState.action == Error)
-                    throw ParserError("parser error");
+                    throw ParserError("error state");
                 else if (actionState.action == Accept)
-                    return stack.size() == 1 ? stack.back() : throw ParserError("parser error");
+                    return stack.size() == 1 ? stack.back() : throw ParserError("work done but, stack contains more than one element");
             }
-            throw ParserError("parser error");
+            throw ParserError("token string is empty");
         }
 
     private:
@@ -628,6 +676,10 @@ namespace json {
                 )
         ;
     }
+
+	struct JsonError : std::runtime_error {
+		JsonError(const std::string& __arg) : runtime_error(__arg) {}
+	};
 
     class Type {
     public:
@@ -857,28 +909,128 @@ namespace json {
         return add<Array>(key, v);
     }
 
-    class Json {
+//	struct Check {
+//		typedef int CheckId;
+//		CheckId checkId;
+//		bool isProduction;
+//
+//		Check(CheckId checkId = -1, bool isProduction = false) : checkId(checkId), isProduction(isProduction) {}
+//
+//		bool operator==(parser::Node const& node) const {
+//			return isProduction == node.isProduction() ? node.getProduction().nonTerminal == checkId
+//													   : node.getToken().tokenId == checkId;
+//		}
+//
+//		bool operator!=(parser::Node const& node) const {
+//			return !(*this == node);
+//		}
+//	};
+//
+//	typedef std::vector<Check> Checks;
+//
+//	typedef common::make_vector<Check> MakeChecks;
+
+	class Json {
     public:
-        Json(parser::Node ast) {}
+        Json(parser::Node const& node) {
+			if (node.isProduction() && node.getProduction().nonTerminal == rules::Object)
+				object = createObject(node);
+			else if (node.isProduction() && node.getProduction().nonTerminal == rules::Array)
+				array = createArray(node);
+			else
+				throw JsonError("invalid format");
+        }
 
         bool hasObject() const {
-            return json.dcast<Object>() != NULL;
+            return isObject;
         }
 
         bool hasArray() const {
-            return json.dcast<Array>() != NULL;
+            return !hasObject();
         }
 
         Object getObject() const {
-            return hasObject() ? *(json.dcast<Object>()) : Object();
+            return hasObject() ? object : Object();
         }
 
         Array getArray() const {
-            return hasArray() ? *(json.dcast<Array>()) : Array();
+            return hasArray() ? array : Array();
         }
 
-        common::XPtr<Type> json;
+    private:
+//        static bool checkFormat(parser::Nodes const& nodes, Checks const& checks) {
+//			json_asserte(nodes.size() == checks.size(), JsonError, "invalid check");
+//			parser::Nodes::const_iterator nodeIt = nodes.begin();
+//			Checks::const_iterator checkIt = checks.begin();
+//			for (; nodeIt != nodes.end() || checkIt != checks.end(); ++nodeIt, ++checkIt)
+//				if (*checkIt != *nodeIt)
+//					return false;
+//			return true;
+//        }
+//
+//		static Checks objectChecks2;
+//		static Checks objectChecks3;
+//
+//		static bool isObject(parser::Node const& node) {
+//			if (node.isProduction() && node.getProduction().nonTerminal == rules::Object)
+//				if (node.getProduction().nodes.size() == 2)
+//					return checkFormat(node.getProduction().nodes, objectChecks2);
+//				else if (node.getProduction().nodes.size() == 3)
+//					return checkFormat(node.getProduction().nodes, objectChecks3);
+//				else false;
+//			else false;
+//		}
+//
+//		static Checks arrayChecks2;
+//		static Checks arrayChecks3;
+//
+//		static bool isArray(parser::Node const& node) {
+//			if (node.isProduction() && node.getProduction().nonTerminal == rules::Array)
+//				if (node.getProduction().nodes.size() == 2)
+//					return checkFormat(node.getProduction().nodes, objectChecks2);
+//				else if (node.getProduction().nodes.size() == 3)
+//					return checkFormat(node.getProduction().nodes, objectChecks3);
+//				else false;
+//			else false;
+//		}
+
+		static Object createObject(parser::Node const& root) {
+			Object object;
+//			for_each_c(parser::Nodes, root.getProduction().nodes, node) {
+//				if (node->isProduction()) {
+//					if (node->getProduction().nonTerminal == rules::String)
+//				}
+//			}
+			return object;
+		}
+
+		static Array createArray(parser::Node const& node) {
+			Array array;
+			return array;
+		}
+
+		bool isObject;
+		Object object;
+		Array array;
     };
+
+//	static Checks Json::objectChecks2 = MakeChecks
+//			(Check(rules::ObjectStart))
+//			(Check(rules::ObjectEnd));
+//
+//	static Checks Json::objectChecks3 = MakeChecks
+//			(Check(rules::ObjectStart))
+//			(Check(rules::Records, true))
+//			(Check(rules::ObjectEnd));
+//
+//	static Checks Json::arrayChecks2 = MakeChecks
+//			(Check(rules::ObjectStart))
+//			(Check(rules::ObjectEnd));
+//
+//	static Checks Json::arrayChecks3 = MakeChecks
+//			(Check(rules::ObjectStart))
+//			(Check(rules::Records, true))
+//			(Check(rules::ObjectEnd));
 
     lexer::Lexer jsonLexer(rules::lexerRules);
     parser::Parser jsonParser(rules::jsonGrammarRules);
