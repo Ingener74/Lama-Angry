@@ -11,7 +11,6 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <stdexcept>
 #include <algorithm>
 
 #define json_assert(cond, message) if(!(cond)) throw std::runtime_error(message);
@@ -603,7 +602,7 @@ namespace json {
         ;
          */
 
-        static std::map<Terminals, std::string> terminalsNames = common::make_map<Terminals, std::string>
+        static parser::TerminalNames terminalsNames = common::make_map<lexer::Terminal, std::string>
             (ObjectStart,  "ObjectStart" )
             (ObjectEnd,    "ObjectEnd"   )
             (ArrayStart,   "ArrayStart"  )
@@ -674,6 +673,16 @@ namespace json {
                         (MakeVariant(Integer))
                         (MakeVariant(Bool))
                 )
+        ;
+
+        static parser::NonTerminalNames nonTerminalNames = common::make_map<parser::NonTerminalId, std::string>
+                (Json,     "Json"    )
+                (Object,   "Object"  )
+                (Array,    "Array"   )
+                (Records,  "Records" )
+                (Record,   "Record"  )
+                (Values,   "Values"  )
+                (Value,    "Value"   )
         ;
     }
 
@@ -909,27 +918,6 @@ namespace json {
         return add<Array>(key, v);
     }
 
-//	struct Check {
-//		typedef int CheckId;
-//		CheckId checkId;
-//		bool isProduction;
-//
-//		Check(CheckId checkId = -1, bool isProduction = false) : checkId(checkId), isProduction(isProduction) {}
-//
-//		bool operator==(parser::Node const& node) const {
-//			return isProduction == node.isProduction() ? node.getProduction().nonTerminal == checkId
-//													   : node.getToken().tokenId == checkId;
-//		}
-//
-//		bool operator!=(parser::Node const& node) const {
-//			return !(*this == node);
-//		}
-//	};
-//
-//	typedef std::vector<Check> Checks;
-//
-//	typedef common::make_vector<Check> MakeChecks;
-
 	class Json {
     public:
         Json(parser::Node const& node) {
@@ -958,42 +946,6 @@ namespace json {
         }
 
     private:
-//        static bool checkFormat(parser::Nodes const& nodes, Checks const& checks) {
-//			json_asserte(nodes.size() == checks.size(), JsonError, "invalid check");
-//			parser::Nodes::const_iterator nodeIt = nodes.begin();
-//			Checks::const_iterator checkIt = checks.begin();
-//			for (; nodeIt != nodes.end() || checkIt != checks.end(); ++nodeIt, ++checkIt)
-//				if (*checkIt != *nodeIt)
-//					return false;
-//			return true;
-//        }
-//
-//		static Checks objectChecks2;
-//		static Checks objectChecks3;
-//
-//		static bool isObject(parser::Node const& node) {
-//			if (node.isProduction() && node.getProduction().nonTerminal == rules::Object)
-//				if (node.getProduction().nodes.size() == 2)
-//					return checkFormat(node.getProduction().nodes, objectChecks2);
-//				else if (node.getProduction().nodes.size() == 3)
-//					return checkFormat(node.getProduction().nodes, objectChecks3);
-//				else false;
-//			else false;
-//		}
-//
-//		static Checks arrayChecks2;
-//		static Checks arrayChecks3;
-//
-//		static bool isArray(parser::Node const& node) {
-//			if (node.isProduction() && node.getProduction().nonTerminal == rules::Array)
-//				if (node.getProduction().nodes.size() == 2)
-//					return checkFormat(node.getProduction().nodes, objectChecks2);
-//				else if (node.getProduction().nodes.size() == 3)
-//					return checkFormat(node.getProduction().nodes, objectChecks3);
-//				else false;
-//			else false;
-//		}
-
 		static Object createObject(parser::Node const& root) {
 			Object object;
 //			for_each_c(parser::Nodes, root.getProduction().nodes, node) {
@@ -1014,24 +966,6 @@ namespace json {
 		Array array;
     };
 
-//	static Checks Json::objectChecks2 = MakeChecks
-//			(Check(rules::ObjectStart))
-//			(Check(rules::ObjectEnd));
-//
-//	static Checks Json::objectChecks3 = MakeChecks
-//			(Check(rules::ObjectStart))
-//			(Check(rules::Records, true))
-//			(Check(rules::ObjectEnd));
-//
-//	static Checks Json::arrayChecks2 = MakeChecks
-//			(Check(rules::ObjectStart))
-//			(Check(rules::ObjectEnd));
-//
-//	static Checks Json::arrayChecks3 = MakeChecks
-//			(Check(rules::ObjectStart))
-//			(Check(rules::Records, true))
-//			(Check(rules::ObjectEnd));
-
     lexer::Lexer jsonLexer(rules::lexerRules);
     parser::Parser jsonParser(rules::jsonGrammarRules);
 
@@ -1043,6 +977,8 @@ namespace json {
         }
 
         parser::Node ast = jsonParser.parse(tokens);
+
+        std::cout << ast.stringify(rules::terminalsNames, rules::nonTerminalNames) << std::endl;
 
         return Json(ast);
     }
@@ -1061,6 +997,11 @@ int main() {
 
         std::ifstream file("../test.json");
         json::Json js = json::parse(file);
+
+        if (js.hasObject())
+            std::cout << js.getObject() << std::endl;
+        if (js.hasArray())
+            std::cout << js.getArray() << std::endl;
 
         std::cout << json::Object()
                 ("Test String", "string")
