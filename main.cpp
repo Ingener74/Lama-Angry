@@ -261,6 +261,9 @@ namespace lexer {
 
     typedef std::vector<std::vector<Transition> > LexerStateMachine;
 
+	typedef std::map<std::string, Terminal> SymbolTable;
+	typedef common::make_map<std::string, Terminal> MakeSymbolTable;
+
     class Lexer {
     public:
         Lexer(LexerRules const &lexerRules) {
@@ -397,8 +400,8 @@ namespace parser {
     typedef std::vector<Node> Nodes;
 
     struct Production {
-        NonTerminalId nonTerminal;
-        std::vector<Node> nodes;
+        NonTerminalId nonTerminal; // Header
+        Nodes nodes; // Body
 
         Production(NonTerminalId nonTerminal = Invalid, Nodes const& nodes = Nodes()) :
                 nonTerminal(nonTerminal), nodes(nodes) {}
@@ -522,6 +525,7 @@ namespace json {
             ArrayEnd,
             Semicolon,
             Comma,
+//			Id,
             Integer,
             Float,
             String,
@@ -600,6 +604,13 @@ namespace json {
                         (Condition("eE"), Transition(Initial, Bool))
                 )
         ;
+
+		static lexer::SymbolTable jsonSymbolTable = lexer::MakeSymbolTable
+				("true", Bool)
+				("True", Bool)
+				("false", Bool)
+				("False", Bool)
+		;
 
         /*
         static LexerRules lexerRules1 = MakeLexerRules
