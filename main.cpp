@@ -381,12 +381,14 @@ namespace parser {
         ParserError(const std::string& __arg) : runtime_error(__arg) {}
     };
 
+    typedef int ReduceCount;
     struct ActionState {
         Action action;
         State state;
-        int productionsCount;
+        ReduceCount reduceCount;
 
-        ActionState(Action action = Error, State state = StartState) : action(action), state(state){}
+        ActionState(Action action = Error, State state = StartState, ReduceCount reduceCount = 0) :
+                action(action), state(state), reduceCount(reduceCount){}
     };
     typedef std::vector<std::vector<ActionState> > States;
 
@@ -483,7 +485,7 @@ namespace parser {
                     stack.push_back(Node(*token));
                 } else if (actionState.action == Reduce) {
                     Nodes nodes;
-                    Nodes::iterator start = stack.begin() + (stack.size() - actionState.productionsCount);
+                    Nodes::iterator start = stack.begin() + (stack.size() - actionState.reduceCount);
                     std::copy(start,
                               stack.end(),
                               std::back_inserter(nodes));
@@ -494,12 +496,12 @@ namespace parser {
                 else if (actionState.action == Accept)
                     return stack.size() == 1 ? stack.back() : throw ParserError("work done but, stack contains more than one element");
             }
-            throw ParserError("token string is empty");
+            throw ParserError("unexpected end of token string");
         }
 
     private:
         ActionState action(lexer::Token const& token) {
-            return ActionState(Shift, StartState);
+            return ActionState(Shift, StartState, 0);
         }
 
         int goTo() {
@@ -941,11 +943,11 @@ namespace json {
         }
 
         Object getObject() const {
-            return hasObject() ? object : Object();
+            return hasObject() ? object : throw JsonError("json root is array");
         }
 
         Array getArray() const {
-            return hasArray() ? array : Array();
+            return hasArray() ? array : throw JsonError("json root is object");
         }
 
     private:
