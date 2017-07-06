@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <stdexcept>
 #include <algorithm>
 
 #define json_assert(cond, message) if(!(cond)) throw std::runtime_error(message);
@@ -404,8 +405,8 @@ namespace parser {
     typedef lexer::Token Token;
     typedef lexer::Tokens Tokens;
 
-	typedef std::map<lexer::Terminal, std::string> TerminalNames;
-	typedef std::map<NonTerminalId, std::string> NonTerminalNames;
+    typedef std::map<lexer::Terminal, std::string> TerminalNames;
+    typedef std::map<NonTerminalId, std::string> NonTerminalNames;
 
     class Node {
     public:
@@ -425,43 +426,45 @@ namespace parser {
             return token;
         }
 
-		static std::string indent2string(int indent = 0) {
-			std::stringstream stream;
-			while(indent--)
-				stream << "    ";
-			return stream.str();
-		}
+        static std::string indent2string(int indent = 0) {
+            std::stringstream stream;
+            while (indent--)
+                stream << "    ";
+            return stream.str();
+        }
 
-		static std::string to_string(int i) {
-			std::stringstream stream;
-			stream << i;
-			return stream.str();
-		}
+        static std::string to_string(int i) {
+            std::stringstream stream;
+            stream << i;
+            return stream.str();
+        }
 
-		std::string stringify(TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent = 0) const {
-			std::stringstream stream;
-			std::string indentation = indent2string(indent);
-			if (_isProduction) {
-				NonTerminalNames::const_iterator nonTerminalNameIt = nonTerminalNames.find(production.nonTerminal);
-				stream << indentation
-					   << (nonTerminalNameIt == nonTerminalNames.end() ? to_string(production.nonTerminal)
-																	   : nonTerminalNameIt->second) << ": {\n";
-				for_each_c(Nodes, production.nodes, node) {
-					stream << node->stringify(terminalNames, nonTerminalNames, indent + 1);
-				}
-				stream << indentation << "}\n";
-			} else {
-				TerminalNames::const_iterator terminalNameIt = terminalNames.find(token.tokenId);
-				stream << indentation
-					   << (terminalNameIt == terminalNames.end() ? to_string(token.tokenId) : terminalNameIt->second)
-					   << ": {\n";
-				stream << indentation << token.value << "\n";
-				stream << indentation << "}\n";
-			}
-			return stream.str();
-		}
+        std::string stringify(TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent = 0) const {
+            std::stringstream stream;
+            std::string indentation = indent2string(indent);
+            if (_isProduction) {
+                NonTerminalNames::const_iterator nonTerminalNameIt = nonTerminalNames.find(production.nonTerminal);
+                stream << indentation
+                       << (nonTerminalNameIt == nonTerminalNames.end() ? to_string(production.nonTerminal)
+                                                                       : nonTerminalNameIt->second) << ": {\n";
+                for_each_c(Nodes, production.nodes, node) {
+                    stream << node->stringify(terminalNames, nonTerminalNames, indent + 1);
+                }
+                stream << indentation << "}\n";
+            } else {
+                TerminalNames::const_iterator terminalNameIt = terminalNames.find(token.tokenId);
+                stream << indentation
+                       << (terminalNameIt == terminalNames.end() ? to_string(token.tokenId) : terminalNameIt->second)
+                       << ": {\n";
+                stream << indentation << token.value << "\n";
+                stream << indentation << "}\n";
+            }
+            return stream.str();
+        }
 
-	private:
+        friend std::ostream& operator<<(std::ostream& os, const Node& node);
+
+    private:
         bool _isProduction;
         Production production;
         Token token;
@@ -603,16 +606,16 @@ namespace json {
          */
 
         static parser::TerminalNames terminalsNames = common::make_map<lexer::Terminal, std::string>
-            (ObjectStart,  "ObjectStart" )
-            (ObjectEnd,    "ObjectEnd"   )
-            (ArrayStart,   "ArrayStart"  )
-            (ArrayEnd,     "ArrayEnd"    )
-            (Semicolon,    "Semicolon"   )
-            (Comma,        "Comma"       )
-            (Integer,      "Integer"     )
-            (Float,        "Float"       )
-            (String,       "String"      )
-            (Bool,         "Bool"        )
+                (ObjectStart, "ObjectStart")
+                (ObjectEnd, "ObjectEnd")
+                (ArrayStart, "ArrayStart")
+                (ArrayEnd, "ArrayEnd")
+                (Semicolon, "Semicolon")
+                (Comma, "Comma")
+                (Integer, "Integer")
+                (Float, "Float")
+                (String, "String")
+                (Bool, "Bool")
         ;
 
         enum NonTerminals {
@@ -686,9 +689,9 @@ namespace json {
         ;
     }
 
-	struct JsonError : std::runtime_error {
-		JsonError(const std::string& __arg) : runtime_error(__arg) {}
-	};
+    struct JsonError : std::runtime_error {
+        JsonError(const std::string& __arg) : runtime_error(__arg) {}
+    };
 
     class Type {
     public:
@@ -918,15 +921,15 @@ namespace json {
         return add<Array>(key, v);
     }
 
-	class Json {
+    class Json {
     public:
         Json(parser::Node const& node) {
-			if (node.isProduction() && node.getProduction().nonTerminal == rules::Object)
-				object = createObject(node);
-			else if (node.isProduction() && node.getProduction().nonTerminal == rules::Array)
-				array = createArray(node);
-			else
-				throw JsonError("invalid format");
+            if (node.isProduction() && node.getProduction().nonTerminal == rules::Object)
+                object = createObject(node);
+            else if (node.isProduction() && node.getProduction().nonTerminal == rules::Array)
+                array = createArray(node);
+            else
+                throw JsonError("invalid format");
         }
 
         bool hasObject() const {
@@ -946,24 +949,24 @@ namespace json {
         }
 
     private:
-		static Object createObject(parser::Node const& root) {
-			Object object;
+        static Object createObject(parser::Node const& root) {
+            Object object;
 //			for_each_c(parser::Nodes, root.getProduction().nodes, node) {
 //				if (node->isProduction()) {
 //					if (node->getProduction().nonTerminal == rules::String)
 //				}
 //			}
-			return object;
-		}
+            return object;
+        }
 
-		static Array createArray(parser::Node const& node) {
-			Array array;
-			return array;
-		}
+        static Array createArray(parser::Node const& node) {
+            Array array;
+            return array;
+        }
 
-		bool isObject;
-		Object object;
-		Array array;
+        bool isObject;
+        Object object;
+        Array array;
     };
 
     lexer::Lexer jsonLexer(rules::lexerRules);
@@ -978,7 +981,7 @@ namespace json {
 
         parser::Node ast = jsonParser.parse(tokens);
 
-        std::cout << ast.stringify(rules::terminalsNames, rules::nonTerminalNames) << std::endl;
+        std::cout << ast << std::endl;
 
         return Json(ast);
     }
@@ -987,6 +990,11 @@ namespace json {
                 std::istreambuf_iterator<char>(stream),
                 std::istreambuf_iterator<char>()
         ));
+    }
+}
+namespace parser {
+    std::ostream& operator<<(std::ostream& os, const parser::Node& node) {
+        return os << node.stringify(json::rules::terminalsNames, json::rules::nonTerminalNames);
     }
 }
 
