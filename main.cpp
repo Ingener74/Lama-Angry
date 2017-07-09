@@ -180,16 +180,12 @@ namespace lexer {
         LexerError(const std::string& __arg) : runtime_error(__arg) {}
     };
 
-//    class MakeLexerRules {
-//    public:
-//        MakeLexerRules() {}
-//    };
-
     struct Transition {
         RuleId ruleId;
         TokenId tokenId;
         bool putChar;
         Increment increment;
+        bool lookInSymbolTable;
 
         Transition(RuleId ruleId = InvalidRule, TokenId tokenId = InvalidToken, bool putChar = true, Increment increment = 1) :
                 ruleId(ruleId), tokenId(tokenId), putChar(putChar), increment(increment){}
@@ -261,8 +257,11 @@ namespace lexer {
 
     typedef std::vector<std::vector<Transition> > LexerStateMachine;
 
-	typedef std::map<std::string, Terminal> SymbolTable;
-	typedef common::make_map<std::string, Terminal> MakeSymbolTable;
+    typedef std::map<std::string, Terminal> SymbolTable;
+    typedef common::make_map<std::string, Terminal> MakeSymbolTable;
+
+    typedef std::map<Terminal, std::string> TerminalNames;
+    typedef common::make_map<Terminal, std::string> MakeTerminalNames;
 
     class Lexer {
     public:
@@ -410,7 +409,6 @@ namespace parser {
     typedef lexer::Token Token;
     typedef lexer::Tokens Tokens;
 
-    typedef std::map<lexer::Terminal, std::string> TerminalNames;
     typedef std::map<NonTerminalId, std::string> NonTerminalNames;
 
     class Node {
@@ -444,7 +442,7 @@ namespace parser {
             return stream.str();
         }
 
-        std::string stringify(TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent = 0) const {
+        std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent = 0) const {
             std::stringstream stream;
             std::string indentation = indent2string(indent);
             if (_isProduction) {
@@ -457,7 +455,7 @@ namespace parser {
                 }
                 stream << indentation << "}\n";
             } else {
-                TerminalNames::const_iterator terminalNameIt = terminalNames.find(token.tokenId);
+                lexer::TerminalNames::const_iterator terminalNameIt = terminalNames.find(token.tokenId);
                 stream << indentation
                        << (terminalNameIt == terminalNames.end() ? to_string(token.tokenId) : terminalNameIt->second)
                        << ": {\n";
@@ -525,7 +523,6 @@ namespace json {
             ArrayEnd,
             Semicolon,
             Comma,
-//			Id,
             Integer,
             Float,
             String,
@@ -543,6 +540,7 @@ namespace json {
             BoolState_a,
             BoolState_l,
             BoolState_s,
+//            IdState,
         };
 
         typedef lexer::LexerRules LexerRules;
@@ -568,6 +566,9 @@ namespace json {
                         (Condition(" "), Transition(Initial, lexer::Skip, false))
                         (Condition("\n"), Transition(Initial, lexer::Skip, false))
                         (Condition("\t"), Transition(Initial, lexer::Skip, false))
+//                        (Condition("_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"), Transition(IdState))
+
+
                 )
                 (StringState, MakeLexerRule
                         (Condition("\"", false), Transition(StringState))
@@ -582,6 +583,10 @@ namespace json {
                         (Condition("0123456789.eE+-"), Transition(FloatState))
                         (Condition("0123456789.eE+-", false), Transition(Initial, Float, false, 0))
                 )
+//                (IdState, MakeLexerRule
+//                        (Condition("_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"), Transition(IdState))
+//                        (Condition("_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", false), Transition(Initial, lexer::InvalidToken, false, 0, true))
+//                )
                 (BoolState_t, MakeLexerRule
                         (Condition("rR"), Transition(BoolState_r))
                 )
@@ -605,20 +610,14 @@ namespace json {
                 )
         ;
 
-		static lexer::SymbolTable jsonSymbolTable = lexer::MakeSymbolTable
-				("true", Bool)
-				("True", Bool)
-				("false", Bool)
-				("False", Bool)
-		;
-
-        /*
-        static LexerRules lexerRules1 = MakeLexerRules
-            (Initial, )
+        static lexer::SymbolTable jsonSymbolTable = lexer::MakeSymbolTable
+                ("true", Bool)
+                ("True", Bool)
+                ("false", Bool)
+                ("False", Bool)
         ;
-         */
 
-        static parser::TerminalNames terminalsNames = common::make_map<lexer::Terminal, std::string>
+        static lexer::TerminalNames terminalsNames = lexer::MakeTerminalNames
                 (ObjectStart, "ObjectStart")
                 (ObjectEnd, "ObjectEnd")
                 (ArrayStart, "ArrayStart")
@@ -934,15 +933,26 @@ namespace json {
         return add<Array>(key, v);
     }
 
+    lexer::Lexer jsonLexer(rules::lexerRules);
+    parser::Parser jsonParser(rules::jsonGrammarRules);
+
     class Json {
     public:
         Json(parser::Node const& node) {
-            if (node.isProduction() && node.getProduction().nonTerminal == rules::Object)
-                object = createObject(node);
-            else if (node.isProduction() && node.getProduction().nonTerminal == rules::Array)
-                array = createArray(node);
-            else
-                throw JsonError("invalid format");
+            init(node);
+        }
+
+        Json(std::string const& string) {
+            init(string);
+        }
+
+        template <typename Iterator>
+        Json(Iterator begin, Iterator end) {
+            Json(std::string(begin, end));
+        }
+
+        Json(std::istream& istream) {
+            init(std::string(std::istreambuf_iterator<char>(istream), std::istreambuf_iterator<char>()));
         }
 
         bool hasObject() const {
@@ -961,6 +971,10 @@ namespace json {
             return hasArray() ? array : throw JsonError("json root is object");
         }
 
+        friend std::ostream& operator<<(std::ostream& os, const Json& json) {
+            return json.isObject ? (os << json.object) : (os << json.array);
+        }
+
     private:
         static Object createObject(parser::Node const& root) {
             Object object;
@@ -977,33 +991,36 @@ namespace json {
             return array;
         }
 
+        void init(parser::Node const& node) {
+            if (node.isProduction())
+                if (rules::Object == node.getProduction().nonTerminal)
+                    object = createObject(node);
+                else if (rules::Array == node.getProduction().nonTerminal)
+                    array = createArray(node);
+                else
+                    throw JsonError("invalid format");
+            else
+                throw JsonError("invalid format");
+        }
+
+        void init(std::string const& string) {
+            lexer::Tokens tokens = jsonLexer.analize(string);
+
+            for_each (lexer::Tokens, tokens, token) {
+                std::cout << *token << std::endl;
+            }
+
+            parser::Node ast = jsonParser.parse(tokens);
+
+            std::cout << ast << std::endl;
+
+            init(ast);
+        }
+
         bool isObject;
         Object object;
         Array array;
     };
-
-    lexer::Lexer jsonLexer(rules::lexerRules);
-    parser::Parser jsonParser(rules::jsonGrammarRules);
-
-    Json parse(std::string const& string) {
-        lexer::Tokens tokens = jsonLexer.analize(string);
-
-        for (lexer::Tokens::const_iterator it = tokens.begin(); it != tokens.end(); ++it) {
-            std::cout << *it << std::endl;
-        }
-
-        parser::Node ast = jsonParser.parse(tokens);
-
-        std::cout << ast << std::endl;
-
-        return Json(ast);
-    }
-    Json parse(std::istream& stream) {
-        return parse(std::string(
-                std::istreambuf_iterator<char>(stream),
-                std::istreambuf_iterator<char>()
-        ));
-    }
 }
 namespace parser {
     std::ostream& operator<<(std::ostream& os, const parser::Node& node) {
@@ -1013,16 +1030,9 @@ namespace parser {
 
 int main() {
     try {
-//        std::ofstream file("lexer_state_machine.txt");
-//        std::cout << json::jsonLexer << std::endl;
-
         std::ifstream file("../test.json");
-        json::Json js = json::parse(file);
-
-        if (js.hasObject())
-            std::cout << js.getObject() << std::endl;
-        if (js.hasArray())
-            std::cout << js.getArray() << std::endl;
+        json::Json js(file);
+        std::cout << js << std::endl;
 
         std::cout << json::Object()
                 ("Test String", "string")

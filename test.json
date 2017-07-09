@@ -2,9 +2,18 @@
   "Num": 32,
   "Real": 1.2e-3,
   "Bool": true,
-  "String": "string",
+  "String": "String",
   "Obj": {
-    "TEST": "Test"
+    "TEST": "Test",
+    "Integer": 42,
+    "Float": 2.72
   },
-  "Arr": [0, 2]
+  "Arr": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    3.1415
+  ]
 }
