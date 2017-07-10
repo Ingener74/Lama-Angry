@@ -419,12 +419,12 @@ namespace parser {
 
     class Node {
     public:
-        Node(Production const& production) : _isProduction(true), production(production) {}
+        Node(Production const& production) : isProduction_(true), production(production) {}
 
-        Node(Token const& token) : _isProduction(false), token(token) {}
+        Node(Token const& token) : isProduction_(false), token(token) {}
 
         bool isProduction() const {
-            return _isProduction;
+            return isProduction_;
         }
 
         Production const& getProduction() const {
@@ -451,7 +451,7 @@ namespace parser {
         std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent = 0) const {
             std::stringstream stream;
             std::string indentation = indent2string(indent);
-            if (_isProduction) {
+            if (isProduction_) {
                 NonTerminalNames::const_iterator nonTerminalNameIt = nonTerminalNames.find(production.nonTerminal);
                 stream << indentation
                        << (nonTerminalNameIt == nonTerminalNames.end() ? to_string(production.nonTerminal)
@@ -474,7 +474,7 @@ namespace parser {
         friend std::ostream& operator<<(std::ostream& os, const Node& node);
 
     private:
-        bool _isProduction;
+        bool isProduction_;
         Production production;
         Token token;
     };
