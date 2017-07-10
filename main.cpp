@@ -137,19 +137,25 @@ namespace common {
     class XPtr {
     public:
         XPtr(T* t = NULL) : t(t) {}
-        ~XPtr() {
-            if (t)
-                delete t;
-            t = NULL;
-        }
+
+        ~XPtr() { if (t) delete t; t = NULL; }
+
         T* operator->() { return t ? t : throw std::runtime_error("pointer is null"); }
+
         const T* operator->() const { return t ? t : throw std::runtime_error("pointer is null"); }
+
         operator T*() { return t; }
+
+        operator const T*() const{ return t; }
+
         template<typename U>
-        const U* dcast() const {
-            return dynamic_cast<const U*>(t);
-        }
+        U* dcast() { return dynamic_cast<U*>(t); }
+
+        template<typename U>
+        const U* dcast() const { return dynamic_cast<const U*>(t); }
+
         XPtr(const XPtr& rhs) { *this = rhs; }
+
         XPtr& operator=(const XPtr& rhs) {
             if (this != &rhs) {
                 if (t) {

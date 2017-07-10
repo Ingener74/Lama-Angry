@@ -4,9 +4,10 @@
   "Bool": true,
   "String": "String",
   "Obj": {
-    "TEST": "Test",
+    "String": "Test",
     "Integer": 42,
-    "Float": 2.72
+    "Float": 2.72,
+    "False": false
   },
   "Arr": [
     0,
@@ -14,6 +15,7 @@
     2,
     3,
     4,
-    3.1415
+    3.1415,
+    "String"
   ]
 }
