@@ -943,7 +943,14 @@ namespace json {
     parser::Parser jsonParser(rules::jsonGrammarRules);
 
     class Json {
+        enum Type {
+            IsInvalid,
+            IsObject,
+            IsArray,
+        };
     public:
+        Json() : type(IsInvalid) {}
+
         Json(parser::Node const& node) {
             init(node);
         }
@@ -962,23 +969,23 @@ namespace json {
         }
 
         bool hasObject() const {
-            return isObject;
+            return type == IsObject;
         }
 
         bool hasArray() const {
-            return !hasObject();
+            return type == IsArray;
         }
 
-        Object getObject() const {
+        Object const& getObject() const {
             return hasObject() ? object : throw JsonError("json root is array");
         }
 
-        Array getArray() const {
+        Array const& getArray() const {
             return hasArray() ? array : throw JsonError("json root is object");
         }
 
         friend std::ostream& operator<<(std::ostream& os, const Json& json) {
-            return json.isObject ? (os << json.object) : (os << json.array);
+            return json.hasObject() ? (os << json.object) : json.hasArray() ? (os << json.array) : os;
         }
 
     private:
@@ -1023,7 +1030,7 @@ namespace json {
             init(ast);
         }
 
-        bool isObject;
+        Type type;
         Object object;
         Array array;
     };
@@ -1038,6 +1045,7 @@ int main() {
     try {
         std::ifstream file("../test.json");
         json::Json js(file);
+        json::Json json1;
         std::cout << js << std::endl;
 
         std::cout << json::Object()
