@@ -1,8 +1,10 @@
+set(PROJECT_NAME LamaAngry)
+project(${PROJECT_NAME})
 cmake_minimum_required(VERSION 3.0)
 
 set(
-        LamaAngry_SOURCES
+        ${PROJECT_NAME}_SOURCES
         main.cpp
 )
 
-add_executable(LamaAngry ${LamaAngry_SOURCES})
+add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_SOURCES})

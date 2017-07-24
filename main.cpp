@@ -1,11 +1,11 @@
 #include <stdint.h>
-#include <stdarg.h>
 #include <set>
 #include <map>
 #include <string>
 #include <limits>
 #include <vector>
 #include <cstdio>
+#include <cstdarg>
 #include <cstring>
 #include <sstream>
 #include <fstream>
@@ -183,7 +183,7 @@ namespace lexer {
     const TokenId Skip = ~0 - 1;
 
     struct LexerError : std::runtime_error {
-        LexerError(const std::string& __arg) : runtime_error(__arg) {}
+        explicit LexerError(const std::string& __arg) : runtime_error(__arg) {}
     };
 
     struct Transition {
@@ -193,7 +193,7 @@ namespace lexer {
         Increment increment;
         bool lookInSymbolTable;
 
-        Transition(RuleId ruleId = InvalidRule, TokenId tokenId = InvalidToken, bool putChar = true, Increment increment = 1) :
+        explicit Transition(RuleId ruleId = InvalidRule, TokenId tokenId = InvalidToken, bool putChar = true, Increment increment = 1) :
                 ruleId(ruleId), tokenId(tokenId), putChar(putChar), increment(increment){}
 
         friend bool operator==(Transition const& lhs, Transition const& rhs) {
@@ -222,7 +222,7 @@ namespace lexer {
         std::string chars;
         bool inSet;
 
-        Condition(std::string const& chars = "", bool inSet = true) : chars(chars), inSet(inSet) {}
+        explicit Condition(std::string const& chars = "", bool inSet = true) : chars(chars), inSet(inSet) {}
 
         friend bool operator<(Condition const& lhs, Condition const& rhs) {
             if (lhs.chars < rhs.chars)
@@ -234,7 +234,7 @@ namespace lexer {
     };
 
     struct Token {
-        Token(TokenId tokenId = InvalidToken, std::string const& value = std::string(),
+        explicit Token(TokenId tokenId = InvalidToken, std::string const& value = std::string(),
               int startLine = -1, int endLine = -1, int startSymbol = -1, int endSymbol = -1)
                 : tokenId(tokenId), value(value),
                   startLine(startLine), endLine(endLine), startSymbol(startSymbol), endSymbol(endSymbol) {}
@@ -271,7 +271,7 @@ namespace lexer {
 
     class Lexer {
     public:
-        Lexer(LexerRules const &lexerRules) {
+        explicit Lexer(LexerRules const &lexerRules) {
             lexerStateMachine.resize(lexerRules.size());
 
             size_t maxChar = std::numeric_limits<uint8_t>::max();
@@ -386,7 +386,7 @@ namespace parser {
     const NonTerminalId Invalid = 0;
 
     struct ParserError : std::runtime_error {
-        ParserError(const std::string& __arg) : runtime_error(__arg) {}
+        explicit ParserError(const std::string& __arg) : runtime_error(__arg) {}
     };
 
     typedef int ReduceCount;
@@ -395,7 +395,7 @@ namespace parser {
         State state;
         ReduceCount reduceCount;
 
-        ActionState(Action action = Error, State state = StartState, ReduceCount reduceCount = 0) :
+        explicit ActionState(Action action = Error, State state = StartState, ReduceCount reduceCount = 0) :
                 action(action), state(state), reduceCount(reduceCount){}
     };
     typedef std::vector<std::vector<ActionState> > States;
@@ -408,7 +408,7 @@ namespace parser {
         NonTerminalId nonTerminal; // Header
         Nodes nodes; // Body
 
-        Production(NonTerminalId nonTerminal = Invalid, Nodes const& nodes = Nodes()) :
+        explicit Production(NonTerminalId nonTerminal = Invalid, Nodes const& nodes = Nodes()) :
                 nonTerminal(nonTerminal), nodes(nodes) {}
     };
 
@@ -419,9 +419,9 @@ namespace parser {
 
     class Node {
     public:
-        Node(Production const& production) : isProduction_(true), production(production) {}
+        explicit Node(Production const& production) : isProduction_(true), production(production) {}
 
-        Node(Token const& token) : isProduction_(false), token(token) {}
+        explicit Node(Token const& token) : isProduction_(false), token(token) {}
 
         bool isProduction() const {
             return isProduction_;
@@ -481,7 +481,7 @@ namespace parser {
 
     class Parser {
     public:
-        Parser(Rules const& rules = Rules()) {
+        explicit Parser(Rules const& rules = Rules()) {
         }
 
         Node parse(lexer::Tokens const& tokens) {
@@ -618,9 +618,7 @@ namespace json {
 
         static lexer::SymbolTable jsonSymbolTable = lexer::MakeSymbolTable
                 ("true", Bool)
-                ("True", Bool)
                 ("false", Bool)
-                ("False", Bool)
         ;
 
         static lexer::TerminalNames terminalsNames = lexer::MakeTerminalNames
@@ -840,20 +838,13 @@ namespace json {
         template <typename T>
         const T* get(std::string const& key) const {
             Fields::iterator it = fields.find(key);
-            if (it == fields.end())
-                return NULL;
-            const T* t = it->second.dcast<T>();
-            if (!t)
-                return NULL;
-            return t;
+            return it == fields.end() ? NULL : it->second.dcast<T>();
         }
 
         template<typename T, typename V>
         V valueOr(std::string const& key, V const& defaultValue = 0) {
             const T* value = get<T>(key);
-            if (!value)
-                return defaultValue;
-            return value->value;
+            return value ? value->value : defaultValue;
         }
 
         mutable Fields fields;
@@ -918,18 +909,13 @@ namespace json {
 
         template <typename T>
         const T* get(size_t index) {
-            const T* t = fields.at(index).dcast<T>();
-            if (!t)
-                return NULL;
-            return t;
+            return fields.at(index).dcast<T>();
         }
 
         template <typename T, typename V>
         V valueOr(size_t index, V const& defaultValue) {
             const T* value = get<T>(index);
-            if (!value)
-                return defaultValue;
-            return value->value;
+            return value ? value->value : defaultValue;
         };
 
         Fields fields;
@@ -951,20 +937,20 @@ namespace json {
     public:
         Json() : type(IsInvalid) {}
 
-        Json(parser::Node const& node) {
+        explicit Json(parser::Node const& node) : type(IsInvalid) {
             init(node);
         }
 
-        Json(std::string const& string) {
+        explicit Json(std::string const& string) : type(IsInvalid) {
             init(string);
         }
 
         template <typename Iterator>
-        Json(Iterator begin, Iterator end) {
-            Json(std::string(begin, end));
+        Json(Iterator begin, Iterator end) : type(IsInvalid) {
+            init(std::string(begin, end));
         }
 
-        Json(std::istream& istream) {
+        explicit Json(std::istream& istream) : type(IsInvalid) {
             init(std::string(std::istreambuf_iterator<char>(istream), std::istreambuf_iterator<char>()));
         }
 
@@ -977,11 +963,15 @@ namespace json {
         }
 
         Object const& getObject() const {
-            return hasObject() ? object : throw JsonError("json root is array");
+            if (hasObject())
+                return object;
+            throw JsonError("json root is array");
         }
 
         Array const& getArray() const {
-            return hasArray() ? array : throw JsonError("json root is object");
+            if (hasArray())
+                return array;
+            throw JsonError("json root is object");
         }
 
         friend std::ostream& operator<<(std::ostream& os, const Json& json) {
