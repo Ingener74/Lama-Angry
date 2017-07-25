@@ -233,23 +233,38 @@ namespace lexer {
         }
     };
 
-    struct Token {
+	typedef std::map<Condition, Transition> LexerRule;
+	typedef std::map<RuleId, LexerRule> LexerRules;
+
+	typedef std::vector<std::vector<Transition> > LexerStateMachine;
+
+	typedef std::map<std::string, Terminal> SymbolTable;
+	typedef common::make_map<std::string, Terminal> MakeSymbolTable;
+
+	typedef std::map<Terminal, std::string> TerminalNames;
+	typedef common::make_map<Terminal, std::string> MakeTerminalNames;
+
+	struct Token {
         explicit Token(TokenId tokenId = InvalidToken, std::string const& value = std::string(),
               int startLine = -1, int endLine = -1, int startSymbol = -1, int endSymbol = -1)
                 : tokenId(tokenId), value(value),
                   startLine(startLine), endLine(endLine), startSymbol(startSymbol), endSymbol(endSymbol) {}
 
-        friend std::ostream& operator<<(std::ostream& os, Token const& token) {
-            return os << "("
-                      << std::setw(2) << token.startLine
-                      << ", " << std::setw(2) << token.endLine
-                      << ", " << std::setw(2) << token.startSymbol
-                      << ", " << std::setw(2) << token.endSymbol
-                      << "), "
-                      << "tokenId: " << token.tokenId << ", "
-                      << (token.value.empty() ? "" : " value: " + token.value)
-                    ;
-        }
+		std::ostream& stringify(std::ostream& out, TerminalNames const& terminalNames, int maxTerminalNameLength) const {
+			TerminalNames::const_iterator terminalNameIt = terminalNames.find(tokenId);
+			return out << "("
+					  << std::setw(2) << startLine
+					  << ", " << std::setw(2) << endLine
+					  << ", " << std::setw(2) << startSymbol
+					  << ", " << std::setw(2) << endSymbol
+					  << "), "
+					  << "token: " << std::setw(maxTerminalNameLength)
+					  << (terminalNameIt == terminalNames.end() ? common::xsnprintf(32, "%d", tokenId) : terminalNameIt->second) << ", "
+					  << (value.empty() ? "" : " value: " + value)
+					;
+		}
+
+        friend std::ostream& operator<<(std::ostream& os, Token const& token);
 
         TokenId tokenId;
         std::string value;
@@ -257,17 +272,6 @@ namespace lexer {
     };
 
     typedef std::vector<Token> Tokens;
-
-    typedef std::map<Condition, Transition> LexerRule;
-    typedef std::map<RuleId, LexerRule> LexerRules;
-
-    typedef std::vector<std::vector<Transition> > LexerStateMachine;
-
-    typedef std::map<std::string, Terminal> SymbolTable;
-    typedef common::make_map<std::string, Terminal> MakeSymbolTable;
-
-    typedef std::map<Terminal, std::string> TerminalNames;
-    typedef common::make_map<Terminal, std::string> MakeTerminalNames;
 
     class Lexer {
     public:
@@ -364,9 +368,9 @@ namespace lexer {
 namespace parser {
     typedef int NonTerminalId;
 
-    typedef std::vector<int> Items;
-    typedef std::vector<Items> Variants;
-    typedef std::map<NonTerminalId, Variants> Rules;
+    typedef std::vector<int> Items;                  // X, Y, Z
+    typedef std::vector<Items> Variants;             // alpha | beta | gamma
+    typedef std::map<NonTerminalId, Variants> Rules; // A -> alpha | beta | gamma
 
     typedef common::make_map<NonTerminalId, Variants> MakeRules;
     typedef common::make_vector<Items> MakeItems;
@@ -375,11 +379,13 @@ namespace parser {
     enum Action {
         Shift,
         Reduce,
-        Error,
         Accept,
+        Error,
     };
 
     typedef int State;
+
+	typedef std::vector<State> StateStack;
 
     const State StartState = 0;
     const NonTerminalId StartNonTerminal = 0;
@@ -448,27 +454,26 @@ namespace parser {
             return stream.str();
         }
 
-        std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent = 0) const {
-            std::stringstream stream;
+        std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent = 0) const {
             std::string indentation = indent2string(indent);
             if (isProduction_) {
                 NonTerminalNames::const_iterator nonTerminalNameIt = nonTerminalNames.find(production.nonTerminal);
-                stream << indentation
+                out << indentation
                        << (nonTerminalNameIt == nonTerminalNames.end() ? to_string(production.nonTerminal)
                                                                        : nonTerminalNameIt->second) << ": {\n";
                 for_each_c(Nodes, production.nodes, node) {
-                    stream << node->stringify(terminalNames, nonTerminalNames, indent + 1);
+                    node->stringify(out, terminalNames, nonTerminalNames, indent + 1);
                 }
-                stream << indentation << "}\n";
+                out << indentation << "}\n";
             } else {
                 lexer::TerminalNames::const_iterator terminalNameIt = terminalNames.find(token.tokenId);
-                stream << indentation
+                out << indentation
                        << (terminalNameIt == terminalNames.end() ? to_string(token.tokenId) : terminalNameIt->second)
                        << ": {\n";
-                stream << indentation << token.value << "\n";
-                stream << indentation << "}\n";
+                out << indentation << token.value << "\n";
+                out << indentation << "}\n";
             }
-            return stream.str();
+            return out;
         }
 
         friend std::ostream& operator<<(std::ostream& os, const Node& node);
@@ -482,14 +487,23 @@ namespace parser {
     class Parser {
     public:
         explicit Parser(Rules const& rules = Rules()) {
+			// Пункты
+
+
+
+			// Action
+
+			// GoTo
         }
 
         Node parse(lexer::Tokens const& tokens) {
+			StateStack stateStack;
             Nodes stack;
             for_each_c (Tokens, tokens, token) {
                 ActionState actionState = action(*token);
                 if (actionState.action == Shift) {
                     stack.push_back(Node(*token));
+					stateStack.push_back(actionState.state);
                 } else if (actionState.action == Reduce) {
                     Nodes nodes;
                     Nodes::iterator start = stack.begin() + (stack.size() - actionState.reduceCount);
@@ -498,6 +512,7 @@ namespace parser {
                               std::back_inserter(nodes));
                     nodes.erase(start, stack.end());
                     stack.push_back(Node(Production(actionState.state, nodes)));
+					stateStack.push_back(goTo());
                 } else if (actionState.action == Error)
                     throw ParserError("error state");
                 else if (actionState.action == Accept)
@@ -511,7 +526,8 @@ namespace parser {
             return ActionState(Shift, StartState, 0);
         }
 
-        int goTo() {
+        State goTo() {
+			return 0;
         }
 
     private:
@@ -1025,9 +1041,17 @@ namespace json {
         Array array;
     };
 }
+namespace lexer {
+	std::ostream& operator<<(std::ostream& os, lexer::Token const& token) {
+		int maxNameLength = 0;
+		for_each_c(lexer::TerminalNames, json::rules::terminalsNames, terminalName)
+			maxNameLength = std::max<int>(maxNameLength, terminalName->second.size());
+		return token.stringify(os, json::rules::terminalsNames, maxNameLength);
+	}
+}
 namespace parser {
     std::ostream& operator<<(std::ostream& os, const parser::Node& node) {
-        return os << node.stringify(json::rules::terminalsNames, json::rules::nonTerminalNames);
+        return node.stringify(os, json::rules::terminalsNames, json::rules::nonTerminalNames);
     }
 }
 
