@@ -244,6 +244,16 @@ namespace lexer {
 	typedef std::map<Terminal, std::string> TerminalNames;
 	typedef common::make_map<Terminal, std::string> MakeTerminalNames;
 
+    std::string terminalName(Terminal terminal, TerminalNames const& terminalNames) {
+        TerminalNames::const_iterator it = terminalNames.find(terminal);
+        if (it == terminalNames.end()) {
+            std::stringstream stringstream;
+            stringstream << terminal;
+            return stringstream.str();
+        }
+        return it->second;
+    }
+
 	struct Token {
         explicit Token(TokenId tokenId = InvalidToken, std::string const& value = std::string(),
               int startLine = -1, int endLine = -1, int startSymbol = -1, int endSymbol = -1)
@@ -366,15 +376,103 @@ namespace lexer {
 }
 
 namespace parser {
-    typedef int NonTerminalId;
+    typedef int NonTerminal;
 
-    typedef std::vector<int> Items;                  // X, Y, Z
+    typedef std::map<NonTerminal, std::string> NonTerminalNames;
+
+    std::string nonTerminalName(NonTerminal nonTerminal, NonTerminalNames const& nonTerminalNames) {
+        NonTerminalNames::const_iterator it = nonTerminalNames.find(nonTerminal);
+        if (it == nonTerminalNames.end()) {
+            std::stringstream stringstream;
+            stringstream << nonTerminal;
+            return stringstream.str();
+        }
+        return it->second;
+    }
+
+    struct ConvItem {
+        int value; // Terminal or NonTerminal
+        bool isTerminal;
+
+        explicit ConvItem(int value, bool isTerminal = true) : value(value), isTerminal(isTerminal)
+        {}
+
+        friend bool operator==(const ConvItem& lhs, const ConvItem& rhs)
+        {
+            return lhs.value == rhs.value &&
+                   lhs.isTerminal == rhs.isTerminal;
+        }
+
+        friend bool operator!=(const ConvItem& lhs, const ConvItem& rhs)
+        {
+            return !(rhs == lhs);
+        }
+
+        friend bool operator<(const ConvItem& lhs, const ConvItem& rhs)
+        {
+            if (lhs.value < rhs.value)
+                return true;
+            if (rhs.value < lhs.value)
+                return false;
+            return lhs.isTerminal < rhs.isTerminal;
+        }
+
+        std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
+            std::stringstream stringstream;
+            stringstream << std::setw(14)
+                         << (isTerminal ? "Terminal" : "NonTerminal") << ": "
+                         << (isTerminal ? lexer::terminalName(value, terminalNames) : nonTerminalName(value, nonTerminalNames));
+            return stringstream.str();
+        }
+    };
+
+    typedef std::vector<ConvItem> Items;             // X, Y, Z
     typedef std::vector<Items> Variants;             // alpha | beta | gamma
-    typedef std::map<NonTerminalId, Variants> Rules; // A -> alpha | beta | gamma
+    typedef std::map<NonTerminal, Variants> Rules;   // A -> alpha | beta | gamma
 
-    typedef common::make_map<NonTerminalId, Variants> MakeRules;
+    typedef common::make_map<NonTerminal, Variants> MakeRules;
     typedef common::make_vector<Items> MakeItems;
-    typedef common::make_vector<int> MakeVariant;
+    typedef common::make_vector<ConvItem> MakeVariant;
+
+
+    struct Convolution {
+        NonTerminal header;
+        Items body;
+
+        Convolution(NonTerminal header, Items const& body) : header(header), body(body)
+        {}
+
+        virtual std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
+            std::stringstream stringstream;
+            stringstream << nonTerminalName(header, nonTerminalNames) << " -> ";
+            for_each(Items, body, item) {
+                if (item != body.begin()) stringstream << ", ";
+                stringstream << item->stringify(terminalNames, nonTerminalNames);
+            }
+            return stringstream.str();
+        }
+    };
+
+//    struct GrammarBuilder;
+//
+//    struct ProductionBuilder : GrammarBuilder {
+//
+//    };
+//
+//    struct GrammarBuilder {
+//        Rules rules;
+//
+//        GrammarBuilder& addProduction(NonTerminal nonTerminal, Items const& items) {
+//            rules.insert(std::make_pair(nonTerminal, items));
+//            return *this;
+//        }
+//
+//        operator Rules() const {
+//            return rules;
+//        }
+//
+//
+//    };
 
     enum Action {
         Shift,
@@ -388,8 +486,9 @@ namespace parser {
 	typedef std::vector<State> StateStack;
 
     const State StartState = 0;
-    const NonTerminalId StartNonTerminal = 0;
-    const NonTerminalId Invalid = 0;
+    const NonTerminal StartNonTerminal = 0;
+    const NonTerminal InitialNonTerminal = 1;
+    const NonTerminal Invalid = 0;
 
     struct ParserError : std::runtime_error {
         explicit ParserError(const std::string& __arg) : runtime_error(__arg) {}
@@ -411,17 +510,15 @@ namespace parser {
     typedef std::vector<Node> Nodes;
 
     struct Production {
-        NonTerminalId nonTerminal; // Header
+        NonTerminal nonTerminal; // Header
         Nodes nodes; // Body
 
-        explicit Production(NonTerminalId nonTerminal = Invalid, Nodes const& nodes = Nodes()) :
+        explicit Production(NonTerminal nonTerminal = Invalid, Nodes const& nodes = Nodes()) :
                 nonTerminal(nonTerminal), nodes(nodes) {}
     };
 
     typedef lexer::Token Token;
     typedef lexer::Tokens Tokens;
-
-    typedef std::map<NonTerminalId, std::string> NonTerminalNames;
 
     class Node {
     public:
@@ -484,39 +581,115 @@ namespace parser {
         Token token;
     };
 
-    class Parser {
+    struct Situation : Convolution {
+        size_t point;
+
+        explicit Situation(NonTerminal nonTerminal, Items const& items) : Convolution(nonTerminal, items), point(0) {
+        }
+
+        virtual std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
+            std::stringstream stringstream;
+            stringstream << nonTerminalName(header, nonTerminalNames) << " -> ";
+            for_each(Items, body, item) {
+                if (item != body.begin()) stringstream << ", ";
+                if (std::distance(body.begin(), item) == point) stringstream << "^";
+                stringstream << (item->isTerminal ? lexer::terminalName(item->value, terminalNames) : nonTerminalName(item->value, nonTerminalNames));
+            }
+            return stringstream.str();
+        }
+    };
+
+    typedef std::vector<Situation> Situations;
+
+    std::ostream& stringify(Situations const& situations, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
+
+    }
+
+typedef std::set<ConvItem> ConvItemsUnique;
+
+class Parser {
     public:
-        explicit Parser(Rules const& rules = Rules()) {
+        explicit Parser(Rules const& rules = Rules(),
+                        lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
+                        NonTerminalNames const& nonTerminalNames = NonTerminalNames()) {
 			// Пункты
+            Rules extendedGrammar = rules;
+            extendedGrammar.insert(std::make_pair(StartNonTerminal, MakeItems(
+                    MakeVariant(ConvItem(InitialNonTerminal, false))
+            )));
 
+            Situations situations; // I0
 
+            for_each(Rules, extendedGrammar, extGram) {
+                for_each(Variants, extGram->second, variant) {
+                    situations.push_back(Situation(extGram->first, *variant));
+                }
+            }
+
+            for_each(Situations, situations, situation) {
+                std::string string = situation->stringify(terminalNames, nonTerminalNames);
+                std::cout << string << std::endl;
+            }
+
+            ConvItemsUnique goTos;
+            for_each(Situations, situations, situation) {
+                goTos.insert(situation->body.front());
+            }
+
+            for_each(ConvItemsUnique, goTos, goTo) {
+                std::cout << goTo->stringify(terminalNames, nonTerminalNames) << std::endl;
+
+                std::cout << "----" << std::endl;
+
+                Situations I = closure(situations, *goTo);
+                for_each(Situations, I, s) {
+                    std::cout << s->stringify(terminalNames, nonTerminalNames) << std::endl;
+                }
+
+                std::cout << "----" << std::endl;
+            }
+
+            std::cout << std::endl;
 
 			// Action
 
 			// GoTo
         }
 
+        Situations closure(Situations const& situations, ConvItem const& convItem) {
+            Situations clsr;
+            for_each_c(Situations, situations, situation) {
+                if (situation->body.at(situation->point) == convItem) {
+                    Situation s = *situation;
+                    s.point++;
+                    clsr.push_back(s);
+                }
+            }
+
+            return clsr;
+        }
+
         Node parse(lexer::Tokens const& tokens) {
 			StateStack stateStack;
-            Nodes stack;
+            Nodes nodeStack;
             for_each_c (Tokens, tokens, token) {
                 ActionState actionState = action(*token);
                 if (actionState.action == Shift) {
-                    stack.push_back(Node(*token));
+                    nodeStack.push_back(Node(*token));
 					stateStack.push_back(actionState.state);
                 } else if (actionState.action == Reduce) {
                     Nodes nodes;
-                    Nodes::iterator start = stack.begin() + (stack.size() - actionState.reduceCount);
+                    Nodes::iterator start = nodeStack.begin() + (nodeStack.size() - actionState.reduceCount);
                     std::copy(start,
-                              stack.end(),
+                              nodeStack.end(),
                               std::back_inserter(nodes));
-                    nodes.erase(start, stack.end());
-                    stack.push_back(Node(Production(actionState.state, nodes)));
+                    nodes.erase(start, nodeStack.end());
+                    nodeStack.push_back(Node(Production(actionState.state, nodes)));
 					stateStack.push_back(goTo());
                 } else if (actionState.action == Error)
                     throw ParserError("error state");
                 else if (actionState.action == Accept)
-                    return stack.size() == 1 ? stack.back() : throw ParserError("work done but, stack contains more than one element");
+                    return nodeStack.size() == 1 ? nodeStack.back() : throw ParserError("work done but, nodeStack contains more than one element");
             }
             throw ParserError("unexpected end of token string");
         }
@@ -651,7 +824,7 @@ namespace json {
         ;
 
         enum NonTerminals {
-            Json,
+            Json = parser::InitialNonTerminal,
             Object,
             Array,
             Records,
@@ -660,6 +833,7 @@ namespace json {
             Value,
         };
 
+        typedef parser::ConvItem ConvItem;
         typedef parser::Rules Rules;
         typedef parser::MakeRules MakeRules;
         typedef parser::MakeItems MakeItems;
@@ -676,41 +850,52 @@ namespace json {
          * Records ::= Record, Comma, Records | Record
          * Record  ::= String, Semicolon, Value
          */
+
+        /*
+           GrammarBuilder.
+                rule(Json).nonTerm(Object).
+                rule(Json).nonTerm(Array).
+                rule(Object).term(ObjectStart).nonTerm(Records).term(ObjectEnd).
+                rule(Object).term(ObjectStart).term(ObjectEnd).
+                rule().
+                    ....
+         */
+
         static Rules jsonGrammarRules = MakeRules
                 (Json, MakeItems
-                        (MakeVariant(Object))
-                        (MakeVariant(Array))
+                        (MakeVariant(ConvItem(Object, false)))
+                        (MakeVariant(ConvItem(Array, false)))
                 )
                 (Object, MakeItems
-                        (MakeVariant(ObjectStart)(Records)(ObjectEnd))
-                        (MakeVariant(ObjectStart)(ObjectEnd))
+                        (MakeVariant(ConvItem(ObjectStart))(ConvItem(Records, false))(ConvItem(ObjectEnd)))
+                        (MakeVariant(ConvItem(ObjectStart))(ConvItem(ObjectEnd)))
                 )
                 (Array, MakeItems
-                        (MakeVariant(ArrayStart)(Values)(ArrayEnd))
-                        (MakeVariant(ArrayStart)(ArrayEnd))
+                        (MakeVariant(ConvItem(ArrayStart))(ConvItem(Values, false))(ConvItem(ArrayEnd)))
+                        (MakeVariant(ConvItem(ArrayStart))(ConvItem(ArrayEnd)))
                 )
                 (Records, MakeItems
-                        (MakeVariant(Record)(Comma)(Records))
-                        (MakeVariant(Record))
+                        (MakeVariant(ConvItem(Record, false))(ConvItem(Comma))(ConvItem(Records, false)))
+                        (MakeVariant(ConvItem(Record, false)))
                 )
                 (Record, MakeItems
-                        (MakeVariant(String)(Semicolon)(Value))
+                        (MakeVariant(ConvItem(String))(ConvItem(Semicolon))(ConvItem(Value, false)))
                 )
                 (Values, MakeItems
-                        (MakeVariant(Value)(Comma)(Values))
-                        (MakeVariant(Value))
+                        (MakeVariant(ConvItem(Value, false))(ConvItem(Comma))(ConvItem(Values, false)))
+                        (MakeVariant(ConvItem(Value, false)))
                 )
                 (Value, MakeItems
-                        (MakeVariant(Object))
-                        (MakeVariant(Array))
-                        (MakeVariant(String))
-                        (MakeVariant(Float))
-                        (MakeVariant(Integer))
-                        (MakeVariant(Bool))
+                        (MakeVariant(ConvItem(Object, false)))
+                        (MakeVariant(ConvItem(Array, false)))
+                        (MakeVariant(ConvItem(String)))
+                        (MakeVariant(ConvItem(Float)))
+                        (MakeVariant(ConvItem(Integer)))
+                        (MakeVariant(ConvItem(Bool)))
                 )
         ;
 
-        static parser::NonTerminalNames nonTerminalNames = common::make_map<parser::NonTerminalId, std::string>
+        static parser::NonTerminalNames nonTerminalNames = common::make_map<parser::NonTerminal, std::string>
                 (Json,     "Json"    )
                 (Object,   "Object"  )
                 (Array,    "Array"   )
@@ -942,7 +1127,7 @@ namespace json {
     }
 
     lexer::Lexer jsonLexer(rules::lexerRules);
-    parser::Parser jsonParser(rules::jsonGrammarRules);
+    parser::Parser jsonParser(rules::jsonGrammarRules, json::rules::terminalsNames, json::rules::nonTerminalNames);
 
     class Json {
         enum Type {
