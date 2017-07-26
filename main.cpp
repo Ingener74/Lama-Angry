@@ -233,16 +233,16 @@ namespace lexer {
         }
     };
 
-	typedef std::map<Condition, Transition> LexerRule;
-	typedef std::map<RuleId, LexerRule> LexerRules;
+    typedef std::map<Condition, Transition> LexerRule;
+    typedef std::map<RuleId, LexerRule> LexerRules;
 
-	typedef std::vector<std::vector<Transition> > LexerStateMachine;
+    typedef std::vector<std::vector<Transition> > LexerStateMachine;
 
-	typedef std::map<std::string, Terminal> SymbolTable;
-	typedef common::make_map<std::string, Terminal> MakeSymbolTable;
+    typedef std::map<std::string, Terminal> SymbolTable;
+    typedef common::make_map<std::string, Terminal> MakeSymbolTable;
 
-	typedef std::map<Terminal, std::string> TerminalNames;
-	typedef common::make_map<Terminal, std::string> MakeTerminalNames;
+    typedef std::map<Terminal, std::string> TerminalNames;
+    typedef common::make_map<Terminal, std::string> MakeTerminalNames;
 
     std::string terminalName(Terminal terminal, TerminalNames const& terminalNames) {
         TerminalNames::const_iterator it = terminalNames.find(terminal);
@@ -254,25 +254,25 @@ namespace lexer {
         return it->second;
     }
 
-	struct Token {
+    struct Token {
         explicit Token(TokenId tokenId = InvalidToken, std::string const& value = std::string(),
               int startLine = -1, int endLine = -1, int startSymbol = -1, int endSymbol = -1)
                 : tokenId(tokenId), value(value),
                   startLine(startLine), endLine(endLine), startSymbol(startSymbol), endSymbol(endSymbol) {}
 
-		std::ostream& stringify(std::ostream& out, TerminalNames const& terminalNames, int maxTerminalNameLength) const {
-			TerminalNames::const_iterator terminalNameIt = terminalNames.find(tokenId);
-			return out << "("
-					  << std::setw(2) << startLine
-					  << ", " << std::setw(2) << endLine
-					  << ", " << std::setw(2) << startSymbol
-					  << ", " << std::setw(2) << endSymbol
-					  << "), "
-					  << "token: " << std::setw(maxTerminalNameLength)
-					  << (terminalNameIt == terminalNames.end() ? common::xsnprintf(32, "%d", tokenId) : terminalNameIt->second) << ", "
-					  << (value.empty() ? "" : " value: " + value)
-					;
-		}
+        std::ostream& stringify(std::ostream& out, TerminalNames const& terminalNames, int maxTerminalNameLength) const {
+            TerminalNames::const_iterator terminalNameIt = terminalNames.find(tokenId);
+            return out << "("
+                       << std::setw(2) << startLine
+                       << ", " << std::setw(2) << endLine
+                       << ", " << std::setw(2) << startSymbol
+                       << ", " << std::setw(2) << endSymbol
+                       << "), "
+                       << "token: " << std::setw(maxTerminalNameLength)
+                       << (terminalNameIt == terminalNames.end() ? common::xsnprintf(32, "%d", tokenId)
+                                                                 : terminalNameIt->second) << ", "
+                       << (value.empty() ? "" : " value: " + value);
+        }
 
         friend std::ostream& operator<<(std::ostream& os, Token const& token);
 
@@ -451,6 +451,11 @@ namespace parser {
             }
             return stringstream.str();
         }
+
+        friend bool operator==(const Convolution& lhs, const Convolution& rhs) {
+            return lhs.header == rhs.header &&
+                   lhs.body == rhs.body;
+        }
     };
 
 //    struct GrammarBuilder;
@@ -591,92 +596,69 @@ namespace parser {
             std::stringstream stringstream;
             stringstream << nonTerminalName(header, nonTerminalNames) << " -> ";
             for_each(Items, body, item) {
-                if (item != body.begin()) stringstream << ", ";
                 if (std::distance(body.begin(), item) == point) stringstream << "^";
-                stringstream << (item->isTerminal ? lexer::terminalName(item->value, terminalNames) : nonTerminalName(item->value, nonTerminalNames));
+                stringstream << " "
+                             << (item->isTerminal ? lexer::terminalName(item->value, terminalNames) : nonTerminalName(item->value, nonTerminalNames))
+                             << " ";
             }
+            if (body.size() == point)
+                stringstream << "^";
             return stringstream.str();
+        }
+
+        friend bool operator==(const Situation& lhs, const Situation& rhs) {
+            return static_cast<const Convolution&>(lhs) == static_cast<const Convolution&>(rhs) &&
+                   lhs.point == rhs.point;
         }
     };
 
     typedef std::vector<Situation> Situations;
 
-    std::ostream& stringify(Situations const& situations, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
+    typedef std::set<ConvItem> ConvItemsUnique;
 
-    }
-
-typedef std::set<ConvItem> ConvItemsUnique;
-
-class Parser {
+    class Parser {
     public:
         explicit Parser(Rules const& rules = Rules(),
                         lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
                         NonTerminalNames const& nonTerminalNames = NonTerminalNames()) {
-			// Пункты
-            Rules extendedGrammar = rules;
-            extendedGrammar.insert(std::make_pair(StartNonTerminal, MakeItems(
-                    MakeVariant(ConvItem(InitialNonTerminal, false))
-            )));
 
-            Situations situations; // I0
-
-            for_each(Rules, extendedGrammar, extGram) {
-                for_each(Variants, extGram->second, variant) {
-                    situations.push_back(Situation(extGram->first, *variant));
-                }
-            }
+            Situations situations;
+            Situation start(StartNonTerminal, MakeVariant(ConvItem(InitialNonTerminal, false)));
+            situations.push_back(start);
+            closure(situations, rules, start);
 
             for_each(Situations, situations, situation) {
                 std::string string = situation->stringify(terminalNames, nonTerminalNames);
                 std::cout << string << std::endl;
             }
 
-            ConvItemsUnique goTos;
-            for_each(Situations, situations, situation) {
-                goTos.insert(situation->body.front());
-            }
-
-            for_each(ConvItemsUnique, goTos, goTo) {
-                std::cout << goTo->stringify(terminalNames, nonTerminalNames) << std::endl;
-
-                std::cout << "----" << std::endl;
-
-                Situations I = closure(situations, *goTo);
-                for_each(Situations, I, s) {
-                    std::cout << s->stringify(terminalNames, nonTerminalNames) << std::endl;
-                }
-
-                std::cout << "----" << std::endl;
-            }
-
             std::cout << std::endl;
-
-			// Action
-
-			// GoTo
         }
 
-        Situations closure(Situations const& situations, ConvItem const& convItem) {
-            Situations clsr;
-            for_each_c(Situations, situations, situation) {
-                if (situation->body.at(situation->point) == convItem) {
-                    Situation s = *situation;
-                    s.point++;
-                    clsr.push_back(s);
+        void closure(Situations& situations, Rules const& grammar, Situation const& situation) {
+            if (situation.body.at(situation.point).isTerminal)
+                return;
+            Rules::const_iterator rule = grammar.find(situation.body.at(situation.point).value);
+            for_each_c(Variants, rule->second, v) {
+                Situation s(rule->first, *v);
+                if (std::find(situations.begin(), situations.end(), s) == situations.end()) {
+                    situations.push_back(s);
+                    closure(situations, grammar, s);
                 }
             }
+        }
 
-            return clsr;
+        void goTo(Situations& output, Situations const& situations, ConvItem const& convItem) {
         }
 
         Node parse(lexer::Tokens const& tokens) {
-			StateStack stateStack;
+            StateStack stateStack;
             Nodes nodeStack;
             for_each_c (Tokens, tokens, token) {
                 ActionState actionState = action(*token);
                 if (actionState.action == Shift) {
                     nodeStack.push_back(Node(*token));
-					stateStack.push_back(actionState.state);
+                    stateStack.push_back(actionState.state);
                 } else if (actionState.action == Reduce) {
                     Nodes nodes;
                     Nodes::iterator start = nodeStack.begin() + (nodeStack.size() - actionState.reduceCount);
@@ -685,11 +667,12 @@ class Parser {
                               std::back_inserter(nodes));
                     nodes.erase(start, nodeStack.end());
                     nodeStack.push_back(Node(Production(actionState.state, nodes)));
-					stateStack.push_back(goTo());
+                    stateStack.push_back(goTo());
                 } else if (actionState.action == Error)
                     throw ParserError("error state");
                 else if (actionState.action == Accept)
-                    return nodeStack.size() == 1 ? nodeStack.back() : throw ParserError("work done but, nodeStack contains more than one element");
+                    return nodeStack.size() == 1 ? nodeStack.back() : throw ParserError(
+                            "work done but, nodeStack contains more than one element");
             }
             throw ParserError("unexpected end of token string");
         }
@@ -700,7 +683,7 @@ class Parser {
         }
 
         State goTo() {
-			return 0;
+            return 0;
         }
 
     private:
