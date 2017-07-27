@@ -643,8 +643,7 @@ namespace parser {
         Situations situations;
 
         CanonicalItem(GrammaticSymbol const& terminal, Situations const& situations) : terminal(terminal),
-																					   situations(situations)
-        {}
+                                                                                       situations(situations) {}
         std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
             std::stringstream stringstream;
             stringstream << terminal.stringify(terminalNames, nonTerminalNames) << "\n";
@@ -662,36 +661,36 @@ namespace parser {
         bool operator()(CanonicalItem const& rhs) const { return s == rhs.situations; }
     };
 
-	typedef std::set<lexer::Terminal> UniqueTerminals;
+    typedef std::set<lexer::Terminal> UniqueTerminals;
 
-	typedef std::set<NonTerminal> UniqueNonTerminals;
+    typedef std::set<NonTerminal> UniqueNonTerminals;
 
-	class Parser {
+    class Parser {
     public:
         explicit Parser(Rules const& rules = Rules(),
                         lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
-                        NonTerminalNames const& nonTerminalNames = NonTerminalNames()) {
+                        NonTerminalNames const& nonTerminalNames = NonTerminalNames()) : states(0), terminals(0),
+                                                                                         nonTerminals(0) {
+            UniqueGrammaticSymbols uniqueGrammaticSymbols;
+            for_each_c(Rules, rules, rule) {
+                uniqueGrammaticSymbols.insert(GrammaticSymbol(rule->first, false));
+                for_each_c(Variants, rule->second, variants) {
+                    for_each_c(Items, (*variants), item) {
+                        uniqueGrammaticSymbols.insert(*item);
+                    }
+                }
+            }
 
-			UniqueGrammaticSymbols uniqueGrammaticSymbols;
-			for_each_c(Rules, rules, rule) {
-				uniqueGrammaticSymbols.insert(GrammaticSymbol(rule->first, false));
-				for_each_c(Variants, rule->second, variants) {
-					for_each_c(Items, (*variants), item) {
-						uniqueGrammaticSymbols.insert(*item);
-					}
-				}
-			}
+            CanonicalSet canonicalSet = items(rules, uniqueGrammaticSymbols);
 
-			CanonicalSet canonicalSet = items(rules, uniqueGrammaticSymbols);
-
-			UniqueTerminals uniqueTerminals;
-			for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol)
-				if (symbol->isTerminal)
-					uniqueTerminals.insert(symbol->value);
-			UniqueNonTerminals uniqueNonTerminals;
-			for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol)
-				if (!symbol->isTerminal)
-					uniqueNonTerminals.insert(symbol->value);
+            UniqueTerminals uniqueTerminals;
+            for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol)
+                if (symbol->isTerminal)
+                    uniqueTerminals.insert(symbol->value);
+            UniqueNonTerminals uniqueNonTerminals;
+            for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol)
+                if (!symbol->isTerminal)
+                    uniqueNonTerminals.insert(symbol->value);
 
 //            std::cout << canonicalSet.size() << std::endl;
 //            for_each(CanonicalSet, canonicalSet, item)
@@ -700,62 +699,39 @@ namespace parser {
 //            std::ofstream dotFile("canonical_set.dot");
 //            dotFile << dotStringify(rules, canonicalSet, terminalNames, nonTerminalNames);
 
-			actionTable.resize(canonicalSet.size());
-			goToTable.resize(canonicalSet.size());
+            actionTable.resize(canonicalSet.size() * uniqueTerminals.size());
+            goToTable.resize(canonicalSet.size() * uniqueNonTerminals.size());
 
-			for_each (States, actionTable, state)
-				state->resize(uniqueTerminals.size());
-			for_each (StateTable, goToTable, state)
-				state->resize(uniqueNonTerminals.size());
+            for (size_t i = 0; i < canonicalSet.size(); ++i) {
+                for_each_c(Situations, canonicalSet.at(i).situations, situation) {
+                    for_each(UniqueTerminals, uniqueTerminals, terminal) {
+                        if (situation->body.size() == situation->point) {
+                            getAction(i, *terminal).push_back(
+                                    situation->header == StartNonTerminal ? ActionState(Accept)
+                                                                          : ActionState(Reduce, i, situation->header));
+                        } else {
+                            if (!situation->body.at(situation->point).isTerminal)
+                                continue;
 
-			for (size_t i = 0; i < canonicalSet.size(); ++i) {
-				for_each_c(Situations, canonicalSet.at(i).situations, situation) {
-					for_each(UniqueTerminals, uniqueTerminals, terminal) {
-						if (situation->body.size() == situation->point) {
-							ActionState actionState(Reduce, i, situation->header);
-							std::cout << actionTable.at(i).at(*terminal).stringify(nonTerminalNames)
-									  << " -> "
-									  << actionState.stringify(nonTerminalNames) << std::endl;
-							if (actionTable.at(i).at(*terminal) == ActionState()) {
-								if (situation->header == StartNonTerminal) {
-									actionTable.at(i).at(*terminal) = ActionState(Accept);
-								} else {
-									actionTable.at(i).at(*terminal) = actionState;
-								}
-							} else {
-								throw ParserError(common::xsnprintf(64, "state %zu : terminal %d conflict ", i, *terminal));
-							}
-						} else {
-							if (!situation->body.at(situation->point).isTerminal)
-								continue;
+                            Situations goToSits = goTo(rules, canonicalSet.at(i).situations, GrammaticSymbol(*terminal));
 
-							Situations goToSits = goTo(rules, canonicalSet.at(i).situations, GrammaticSymbol(*terminal));
-
-							for (size_t j = 0; j < canonicalSet.size(); ++j) {
-								if (canonicalSet.at(j).situations == goToSits) {
-									ActionState actionState(Shift, j);
-									std::cout << actionTable.at(i).at(*terminal).stringify(nonTerminalNames)
-											  << " -> " << actionState.stringify(nonTerminalNames) << std::endl;
-									if (actionTable.at(i).at(*terminal) != actionState) {
-										if (actionTable.at(i).at(*terminal) == ActionState())
-											actionTable.at(i).at(*terminal) = actionState;
-										else
-											throw ParserError(common::xsnprintf(64, "state %zu : terminal %d conflict ", i, *terminal));
-									}
-								}
-							}
-						}
-					}
-				}
-			}
+                            for (size_t j = 0; j < canonicalSet.size(); ++j) {
+                                if (canonicalSet.at(j).situations == goToSits) {
+                                    getAction(i, *terminal).push_back(actionTable.at(i).at(*terminal) = ActionState(Shift, j));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-		std::string dotStringify(Rules const& grammar,
+        std::string dotStringify(Rules const& grammar,
                                  CanonicalSet const& canonicalSet,
                                  lexer::TerminalNames const& terminalNames,
                                  NonTerminalNames const& nonTerminalNames) {
-			std::stringstream s;
-			s << "digraph CanonicalSet {" << std::endl;
+            std::stringstream s;
+            s << "digraph CanonicalSet {" << std::endl;
 
             for (size_t i = 0; i < canonicalSet.size(); ++i) {
                 s << "I" << i << "[label=\"";
@@ -766,7 +742,7 @@ namespace parser {
                 s << "\"]\n";
             }
 
-			for (size_t i = 0; i < canonicalSet.size(); ++i) {
+            for (size_t i = 0; i < canonicalSet.size(); ++i) {
                 UniqueGrammaticSymbols uniqueGrammaticSymbols;
                 for_each_c(Situations, canonicalSet.at(i).situations, situation) {
                     if (situation->body.size() == situation->point)
@@ -785,42 +761,42 @@ namespace parser {
                         }
                     }
                 }
-			}
-			s << "}";
-			return s.str();
-		}
+            }
+            s << "}";
+            return s.str();
+        }
 
-		static CanonicalSet items(Rules const& rules, UniqueGrammaticSymbols const& uniqueGrammaticSymbols) {
-			CanonicalSet canonicalSet;
+        static CanonicalSet items(Rules const& rules, UniqueGrammaticSymbols const& uniqueGrammaticSymbols) {
+            CanonicalSet canonicalSet;
 
-			Situations situations;
-			Situation start(StartNonTerminal, MakeVariant(GrammaticSymbol(InitialNonTerminal, false)));
-			situations.push_back(start);
-			closure(situations, rules, start);
+            Situations situations;
+            Situation start(StartNonTerminal, MakeVariant(GrammaticSymbol(InitialNonTerminal, false)));
+            situations.push_back(start);
+            closure(situations, rules, start);
 
-			canonicalSet.push_back(CanonicalItem(GrammaticSymbol(lexer::InvalidToken), situations));
+            canonicalSet.push_back(CanonicalItem(GrammaticSymbol(lexer::InvalidToken), situations));
 
-			int itemAdded;
-			do {
-				itemAdded = 0;
-				CanonicalSet t;
-				for_each(CanonicalSet, canonicalSet, canonicalItem) {
-					for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol) {
-						Situations goToSituation = goTo(rules, canonicalItem->situations, *symbol/*, terminalNames, nonTerminalNames*/);
-						if (goToSituation.empty())
-							continue;
-						if (std::find_if(canonicalSet.begin(), canonicalSet.end(), Pred(goToSituation)) == canonicalSet.end() &&
-							std::find_if(t.begin(), t.end(), Pred(goToSituation)) == t.end()) {
-							t.push_back(CanonicalItem(*symbol, goToSituation));
-							itemAdded++;
-						}
-					}
-				}
-				std::copy(t.begin(), t.end(), std::back_inserter(canonicalSet));
-			} while (itemAdded > 0);
+            int itemAdded;
+            do {
+                itemAdded = 0;
+                CanonicalSet t;
+                for_each(CanonicalSet, canonicalSet, canonicalItem) {
+                    for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol) {
+                        Situations goToSituation = goTo(rules, canonicalItem->situations, *symbol/*, terminalNames, nonTerminalNames*/);
+                        if (goToSituation.empty())
+                            continue;
+                        if (std::find_if(canonicalSet.begin(), canonicalSet.end(), Pred(goToSituation)) == canonicalSet.end() &&
+                            std::find_if(t.begin(), t.end(), Pred(goToSituation)) == t.end()) {
+                            t.push_back(CanonicalItem(*symbol, goToSituation));
+                            itemAdded++;
+                        }
+                    }
+                }
+                std::copy(t.begin(), t.end(), std::back_inserter(canonicalSet));
+            } while (itemAdded > 0);
 
-			return canonicalSet;
-		}
+            return canonicalSet;
+        }
 
         static void closure(Situations& situations, Rules const& grammar, Situation const& situation) {
             if (situation.body.size() == situation.point)
@@ -888,17 +864,22 @@ namespace parser {
             throw ParserError("unexpected end of token string");
         }
 
-		std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
-			std::stringstream s;
-			for_each(States, actionTable, state) {
-				if (state != actionTable.begin()) s << "\n";
-				for_each (std::vector<ActionState>, (*state), cell) {
-					if (cell != state->begin()) s << ", ";
-					s << std::setw(8) << cell->stringify(nonTerminalNames);
-				}
-			}
-			return s.str();
-		}
+        std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
+            std::stringstream s;
+            for (size_t i = 0; i < states; ++i) {
+                if (i > 0) s << "\n";
+                for (size_t j = 0; j < terminals; ++j) {
+                    if (j > 0) s << ", ";
+                    s << "[";
+                    for (size_t n = 0; n < getAction(i, j).size(); ++n) {
+                        if (n > 0) s << ", ";
+                        s << std::setw(8) << getAction(i, j).at(n).stringify(nonTerminalNames);
+                    }
+                    s << "]";
+                }
+            }
+            return s.str();
+        }
 
     private:
         ActionState action(State curState, lexer::Terminal terminal) {
@@ -909,9 +890,23 @@ namespace parser {
             return goToTable.at(curState).at(nonTerminal);
         }
 
-    private:
+        std::vector<ActionState>& getAction(State state, lexer::Terminal terminal) {
+            if (actionTable.empty())
+                throw ParserError("action is empty");
+            return actionTable.at(state * terminals + terminal);
+        }
+
+        std::vector<State>& getGoTo(State state, NonTerminal nonTerminal) {
+            if (goToTable.empty())
+                throw ParserError("go to is empty");
+            return goToTable.at(state * nonTerminals + nonTerminal);
+        }
+
         States actionTable;
         StateTable goToTable;
+        size_t states;
+        size_t terminals;
+        size_t nonTerminals;
     };
 }
 
