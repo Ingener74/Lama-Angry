@@ -699,8 +699,12 @@ namespace parser {
 //            std::ofstream dotFile("canonical_set.dot");
 //            dotFile << dotStringify(rules, canonicalSet, terminalNames, nonTerminalNames);
 
-            actionTable.resize(canonicalSet.size() * uniqueTerminals.size());
-            goToTable.resize(canonicalSet.size() * uniqueNonTerminals.size());
+            states = canonicalSet.size();
+            terminals = uniqueTerminals.size();
+            nonTerminals = uniqueNonTerminals.size();
+
+            actionTable.resize(states * terminals);
+            goToTable.resize(states * nonTerminals);
 
             for (size_t i = 0; i < canonicalSet.size(); ++i) {
                 for_each_c(Situations, canonicalSet.at(i).situations, situation) {
@@ -717,7 +721,11 @@ namespace parser {
 
                             for (size_t j = 0; j < canonicalSet.size(); ++j) {
                                 if (canonicalSet.at(j).situations == goToSits) {
-                                    getAction(i, *terminal).push_back(actionTable.at(i).at(*terminal) = ActionState(Shift, j));
+                                    ActionState actionState(Shift, j);
+                                    std::vector<ActionState>& actions = getAction(i, *terminal);
+                                    if (std::find(actions.begin(), actions.end(), actionState) == actions.end()) {
+                                        actions.push_back(actionState);
+                                    }
                                 }
                             }
                         }
@@ -866,16 +874,28 @@ namespace parser {
 
         std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
             std::stringstream s;
+            size_t w = 0;
+            for (size_t i = 0; i < states; ++i) {
+                for (size_t j = 0; j < terminals; ++j) {
+                    w = std::max(w, getAction(i, j).size());
+                }
+            }
             for (size_t i = 0; i < states; ++i) {
                 if (i > 0) s << "\n";
                 for (size_t j = 0; j < terminals; ++j) {
                     if (j > 0) s << ", ";
                     s << "[";
+                    int width = 14;
+                    size_t sw = width * w + 2 * (w - 1);
                     for (size_t n = 0; n < getAction(i, j).size(); ++n) {
-                        if (n > 0) s << ", ";
-                        s << std::setw(8) << getAction(i, j).at(n).stringify(nonTerminalNames);
+                        if (n > 0) {
+                            s << ", ";
+                            sw -= 2;
+                        }
+                        s << std::setw(width) << getAction(i, j).at(n).stringify(nonTerminalNames);
+                        sw -= width;
                     }
-                    s << "]";
+                    s << std::setw(sw) << "]";
                 }
             }
             return s.str();
