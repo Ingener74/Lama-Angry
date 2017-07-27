@@ -501,14 +501,13 @@ namespace parser {
         explicit ParserError(const std::string& __arg) : runtime_error(__arg) {}
     };
 
-    typedef int ReduceCount;
-    struct ActionState {
+	struct ActionState {
         Action action;
         State state;
-        ReduceCount reduceCount;
+		NonTerminal nonTerminal;
 
-        explicit ActionState(Action action = Error, State state = StartState, ReduceCount reduceCount = 0) :
-                action(action), state(state), reduceCount(reduceCount){}
+        explicit ActionState(Action action = Error, State state = StartState, NonTerminal nonTerminal = Invalid) :
+                action(action), state(state), nonTerminal(nonTerminal) {}
     };
     typedef std::vector<std::vector<ActionState> > States;
 
@@ -647,56 +646,59 @@ namespace parser {
         explicit Parser(Rules const& rules = Rules(),
                         lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
                         NonTerminalNames const& nonTerminalNames = NonTerminalNames()) {
+            CanonicalSet canonicalSet = items(rules);
 
-            ConvItemsUnique grammaticalSymbols;
-            for_each_c(Rules, rules, rule) {
-                grammaticalSymbols.insert(ConvItem(rule->first, false));
-                for_each_c(Variants, rule->second, variants) {
-                    for_each_c(Items, (*variants), item) {
-                        grammaticalSymbols.insert(*item);
-                    }
-                }
-            }
+//            std::cout << canonicalSet.size() << std::endl;
+//            for_each(CanonicalSet, canonicalSet, item)
+//                std::cout << item->stringify(terminalNames, nonTerminalNames) << std::endl;
 
+
+        }
+
+		static CanonicalSet items(Rules const& rules) {
+			ConvItemsUnique grammaticalSymbols;
+			for_each_c(Rules, rules, rule) {
+				grammaticalSymbols.insert(ConvItem(rule->first, false));
+				for_each_c(Variants, rule->second, variants) {
+					for_each_c(Items, (*variants), item) {
+						grammaticalSymbols.insert(*item);
+					}
+				}
+			}
 //            for_each(ConvItemsUnique, grammaticalSymbols, grSym) {
 //                std::cout << grSym->stringify(terminalNames, nonTerminalNames) << std::endl;
 //            }
 
-            CanonicalSet canonicalSet;
+			CanonicalSet canonicalSet;
 
-            Situations situations;
-            Situation start(StartNonTerminal, MakeVariant(ConvItem(InitialNonTerminal, false)));
-            situations.push_back(start);
-            closure(situations, rules, start);
+			Situations situations;
+			Situation start(StartNonTerminal, MakeVariant(ConvItem(InitialNonTerminal, false)));
+			situations.push_back(start);
+			closure(situations, rules, start);
 
-            canonicalSet.push_back(CanonicalItem(ConvItem(lexer::InvalidToken), situations));
+			canonicalSet.push_back(CanonicalItem(ConvItem(lexer::InvalidToken), situations));
 
-//            std::cout << std::endl;
+			int itemAdded;
+			do {
+				itemAdded = 0;
+				CanonicalSet t;
+				for_each(CanonicalSet, canonicalSet, canonicalItem) {
+					for_each(ConvItemsUnique, grammaticalSymbols, symbol) {
+						Situations goToSituation = goTo(rules, canonicalItem->situations, *symbol/*, terminalNames, nonTerminalNames*/);
+						if (goToSituation.empty())
+							continue;
+						if (std::find_if(canonicalSet.begin(), canonicalSet.end(), Pred(goToSituation)) == canonicalSet.end() &&
+							std::find_if(t.begin(), t.end(), Pred(goToSituation)) == t.end()) {
+							t.push_back(CanonicalItem(*symbol, goToSituation));
+							itemAdded++;
+						}
+					}
+				}
+				std::copy(t.begin(), t.end(), std::back_inserter(canonicalSet));
+			} while (itemAdded > 0);
 
-            int itemAdded;
-            do {
-                itemAdded = 0;
-                CanonicalSet t;
-                for_each(CanonicalSet, canonicalSet, canonicalItem) {
-                    for_each(ConvItemsUnique, grammaticalSymbols, symbol) {
-                        Situations goToSituation = goTo(rules, canonicalItem->situations, *symbol, terminalNames, nonTerminalNames);
-                        if (goToSituation.empty())
-                            continue;
-                        if (std::find_if(canonicalSet.begin(), canonicalSet.end(), Pred(goToSituation)) == canonicalSet.end() &&
-                                std::find_if(t.begin(), t.end(), Pred(goToSituation)) == t.end()) {
-                            t.push_back(CanonicalItem(*symbol, goToSituation));
-                            itemAdded++;
-                        }
-                    }
-                }
-                std::copy(t.begin(), t.end(), std::back_inserter(canonicalSet));
-            } while (itemAdded > 0);
-
-//            for_each(CanonicalSet, canonicalSet, item)
-//                std::cout << item->stringify(terminalNames, nonTerminalNames) << std::endl;
-
-//            std::cout << canonicalSet.size() << std::endl;
-        }
+			return canonicalSet;
+		}
 
         static void closure(Situations& situations, Rules const& grammar, Situation const& situation) {
             if (situation.body.size() == situation.point)
@@ -713,9 +715,9 @@ namespace parser {
             }
         }
 
-        static Situations goTo(Rules const& grammar, Situations const& situations, ConvItem const& convItem,
+        static Situations goTo(Rules const& grammar, Situations const& situations, ConvItem const& convItem/*,
                                lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
-                               NonTerminalNames const& nonTerminalNames = NonTerminalNames()) {
+                               NonTerminalNames const& nonTerminalNames = NonTerminalNames()*/) {
             Situations goToSituations;
             for_each_c(Situations, situations, s) {
                 if (s->body.size() == s->point)
@@ -742,16 +744,16 @@ namespace parser {
             for_each_c (Tokens, tokens, token) {
                 ActionState actionState = action(stateStack.back(), token->tokenId);
                 if (actionState.action == Shift) {
-                    nodeStack.push_back(Node(*token));
+//                    nodeStack.push_back(Node(*token));
                     stateStack.push_back(actionState.state);
                 } else if (actionState.action == Reduce) {
-                    Nodes nodes;
-                    Nodes::iterator start = nodeStack.begin() + (nodeStack.size() - actionState.reduceCount);
-                    std::copy(start,
-                              nodeStack.end(),
-                              std::back_inserter(nodes));
-                    nodes.erase(start, nodeStack.end());
-                    nodeStack.push_back(Node(Production(actionState.state, nodes)));
+//                    Nodes nodes;
+//                    Nodes::iterator start = nodeStack.begin() + (nodeStack.size() - actionState.reduceCount);
+//                    std::copy(start,
+//                              nodeStack.end(),
+//                              std::back_inserter(nodes));
+//                    nodes.erase(start, nodeStack.end());
+//                    nodeStack.push_back(Node(Production(actionState.state, nodes)));
                     stateStack.push_back(goTo(stateStack.back(), Invalid/* TODO non terminal from reduce table cell */));
                 } else if (actionState.action == Error) {
                     throw ParserError("error state");
