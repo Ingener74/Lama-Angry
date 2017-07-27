@@ -391,25 +391,25 @@ namespace parser {
         return it->second;
     }
 
-    struct ConvItem {
+    struct GrammaticSymbol {
         int value; // Terminal or NonTerminal
         bool isTerminal;
 
-        explicit ConvItem(int value, bool isTerminal = true) : value(value), isTerminal(isTerminal)
+        explicit GrammaticSymbol(int value, bool isTerminal = true) : value(value), isTerminal(isTerminal)
         {}
 
-        friend bool operator==(const ConvItem& lhs, const ConvItem& rhs)
+        friend bool operator==(const GrammaticSymbol& lhs, const GrammaticSymbol& rhs)
         {
             return lhs.value == rhs.value &&
                    lhs.isTerminal == rhs.isTerminal;
         }
 
-        friend bool operator!=(const ConvItem& lhs, const ConvItem& rhs)
+        friend bool operator!=(const GrammaticSymbol& lhs, const GrammaticSymbol& rhs)
         {
             return !(rhs == lhs);
         }
 
-        friend bool operator<(const ConvItem& lhs, const ConvItem& rhs)
+        friend bool operator<(const GrammaticSymbol& lhs, const GrammaticSymbol& rhs)
         {
             if (lhs.value < rhs.value)
                 return true;
@@ -427,13 +427,13 @@ namespace parser {
         }
     };
 
-    typedef std::vector<ConvItem> Items;             // X, Y, Z
+    typedef std::vector<GrammaticSymbol> Items;             // X, Y, Z
     typedef std::vector<Items> Variants;             // alpha | beta | gamma
     typedef std::map<NonTerminal, Variants> Rules;   // A -> alpha | beta | gamma
 
     typedef common::make_map<NonTerminal, Variants> MakeRules;
     typedef common::make_vector<Items> MakeItems;
-    typedef common::make_vector<ConvItem> MakeVariant;
+    typedef common::make_vector<GrammaticSymbol> MakeVariant;
 
 
 //    struct GrammarBuilder;
@@ -615,14 +615,14 @@ namespace parser {
 
     typedef std::vector<Situation> Situations;
 
-    typedef std::set<ConvItem> ConvItemsUnique;
+    typedef std::set<GrammaticSymbol> UniqueGrammaticSymbols;
 
     struct CanonicalItem {
-        ConvItem terminal;
+        GrammaticSymbol terminal;
         Situations situations;
 
-        CanonicalItem(ConvItem const& terminal, Situations const& situations) : terminal(terminal),
-                                                                                situations(situations)
+        CanonicalItem(GrammaticSymbol const& terminal, Situations const& situations) : terminal(terminal),
+																					   situations(situations)
         {}
         std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
             std::stringstream stringstream;
@@ -652,38 +652,79 @@ namespace parser {
 //            for_each(CanonicalSet, canonicalSet, item)
 //                std::cout << item->stringify(terminalNames, nonTerminalNames) << std::endl;
 
-
+//            std::ofstream dotFile("canonical_set.dot");
+//            dotFile << dotStringify(rules, canonicalSet, terminalNames, nonTerminalNames);
         }
 
+		std::string dotStringify(Rules const& grammar,
+                                 CanonicalSet const& canonicalSet,
+                                 lexer::TerminalNames const& terminalNames,
+                                 NonTerminalNames const& nonTerminalNames) {
+			std::stringstream s;
+			s << "digraph CanonicalSet {" << std::endl;
+
+            for (size_t i = 0; i < canonicalSet.size(); ++i) {
+                s << "I" << i << "[label=\"";
+                for_each_c(Situations, canonicalSet.at(i).situations, sit) {
+                    if (sit != canonicalSet.at(i).situations.begin()) s  << "\n";
+                    s << sit->stringify(terminalNames, nonTerminalNames);
+                }
+                s << "\"]\n";
+            }
+
+			for (size_t i = 0; i < canonicalSet.size(); ++i) {
+                UniqueGrammaticSymbols uniqueGrammaticSymbols;
+                for_each_c(Situations, canonicalSet.at(i).situations, situation) {
+                    if (situation->body.size() == situation->point)
+                        continue;
+                    uniqueGrammaticSymbols.insert(situation->body.at(situation->point));
+                }
+
+                for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol) {
+                    Situations goToSits = goTo(grammar, canonicalSet.at(i).situations, *symbol);
+
+                    for (size_t j = 0; j < canonicalSet.size(); ++j) {
+                        if (goToSits == canonicalSet.at(j).situations) {
+                            s << "I" << i << " -> " << "I" << j << " [label=\""
+                              << (symbol->isTerminal ? lexer::terminalName(symbol->value, terminalNames)
+                                                     : nonTerminalName(symbol->value, nonTerminalNames)) << "\"]" << std::endl;
+                        }
+                    }
+                }
+			}
+			s << "}";
+			return s.str();
+		}
+
 		static CanonicalSet items(Rules const& rules) {
-			ConvItemsUnique grammaticalSymbols;
+			UniqueGrammaticSymbols grammaticalSymbols;
 			for_each_c(Rules, rules, rule) {
-				grammaticalSymbols.insert(ConvItem(rule->first, false));
+				grammaticalSymbols.insert(GrammaticSymbol(rule->first, false));
 				for_each_c(Variants, rule->second, variants) {
 					for_each_c(Items, (*variants), item) {
 						grammaticalSymbols.insert(*item);
 					}
 				}
 			}
-//            for_each(ConvItemsUnique, grammaticalSymbols, grSym) {
+//            for_each(UniqueGrammaticSymbols, grammaticalSymbols, grSym) {
 //                std::cout << grSym->stringify(terminalNames, nonTerminalNames) << std::endl;
 //            }
 
 			CanonicalSet canonicalSet;
 
 			Situations situations;
-			Situation start(StartNonTerminal, MakeVariant(ConvItem(InitialNonTerminal, false)));
+			Situation start(StartNonTerminal, MakeVariant(GrammaticSymbol(InitialNonTerminal, false)));
 			situations.push_back(start);
 			closure(situations, rules, start);
 
-			canonicalSet.push_back(CanonicalItem(ConvItem(lexer::InvalidToken), situations));
+			canonicalSet.push_back(CanonicalItem(GrammaticSymbol(lexer::InvalidToken), situations));
 
 			int itemAdded;
 			do {
 				itemAdded = 0;
 				CanonicalSet t;
 				for_each(CanonicalSet, canonicalSet, canonicalItem) {
-					for_each(ConvItemsUnique, grammaticalSymbols, symbol) {
+					for_each(UniqueGrammaticSymbols, grammaticalSymbols, symbol) {
 						Situations goToSituation = goTo(rules, canonicalItem->situations, *symbol/*, terminalNames, nonTerminalNames*/);
 						if (goToSituation.empty())
 							continue;
@@ -715,14 +756,14 @@ namespace parser {
             }
         }
 
-        static Situations goTo(Rules const& grammar, Situations const& situations, ConvItem const& convItem/*,
+        static Situations goTo(Rules const& grammar, Situations const& situations, GrammaticSymbol const& grammaticSymbol/*,
                                lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
                                NonTerminalNames const& nonTerminalNames = NonTerminalNames()*/) {
             Situations goToSituations;
             for_each_c(Situations, situations, s) {
                 if (s->body.size() == s->point)
                     continue;
-                if (s->body.at(s->point) == convItem) {
+                if (s->body.at(s->point) == grammaticSymbol) {
                     goToSituations.push_back(*s);
                 }
             }
@@ -882,17 +923,29 @@ namespace json {
                 ("false", Bool)
         ;
 
+//        static lexer::TerminalNames terminalsNames = lexer::MakeTerminalNames
+//                (ObjectStart, "ObjectStart")
+//                (ObjectEnd, "ObjectEnd")
+//                (ArrayStart, "ArrayStart")
+//                (ArrayEnd, "ArrayEnd")
+//                (Semicolon, "Semicolon")
+//                (Comma, "Comma")
+//                (Integer, "Integer")
+//                (Float, "Float")
+//                (String, "String")
+//                (Bool, "Bool")
+//        ;
         static lexer::TerminalNames terminalsNames = lexer::MakeTerminalNames
-                (ObjectStart, "ObjectStart")
-                (ObjectEnd, "ObjectEnd")
-                (ArrayStart, "ArrayStart")
-                (ArrayEnd, "ArrayEnd")
-                (Semicolon, "Semicolon")
-                (Comma, "Comma")
-                (Integer, "Integer")
-                (Float, "Float")
-                (String, "String")
-                (Bool, "Bool")
+                (ObjectStart, "Os")
+                (ObjectEnd, "Oe")
+                (ArrayStart, "As")
+                (ArrayEnd, "Ae")
+                (Semicolon, "s:")
+                (Comma, "c,")
+                (Integer, "i")
+                (Float, "f")
+                (String, "s")
+                (Bool, "b")
         ;
 
         enum NonTerminals {
@@ -905,7 +958,7 @@ namespace json {
             Value,
         };
 
-        typedef parser::ConvItem ConvItem;
+        typedef parser::GrammaticSymbol ConvItem;
         typedef parser::Rules Rules;
         typedef parser::MakeRules MakeRules;
         typedef parser::MakeItems MakeItems;
@@ -967,14 +1020,23 @@ namespace json {
                 )
         ;
 
+//        static parser::NonTerminalNames nonTerminalNames = common::make_map<parser::NonTerminal, std::string>
+//                (Json,     "Json"    )
+//                (Object,   "Object"  )
+//                (Array,    "Array"   )
+//                (Records,  "Records" )
+//                (Record,   "Record"  )
+//                (Values,   "Values"  )
+//                (Value,    "Value"   )
+//        ;
         static parser::NonTerminalNames nonTerminalNames = common::make_map<parser::NonTerminal, std::string>
-                (Json,     "Json"    )
-                (Object,   "Object"  )
-                (Array,    "Array"   )
-                (Records,  "Records" )
-                (Record,   "Record"  )
-                (Values,   "Values"  )
-                (Value,    "Value"   )
+                (Json,     "J"    )
+                (Object,   "O"  )
+                (Array,    "A"   )
+                (Records,  "RS" )
+                (Record,   "R"  )
+                (Values,   "VS"  )
+                (Value,    "V"   )
         ;
     }
 
