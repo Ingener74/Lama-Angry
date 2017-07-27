@@ -509,6 +509,18 @@ namespace parser {
         explicit ActionState(Action action = Error, State state = StartState, NonTerminal nonTerminal = Invalid) :
                 action(action), state(state), nonTerminal(nonTerminal) {}
 
+		friend bool operator==(const ActionState& lhs, const ActionState& rhs)
+		{
+			return lhs.action == rhs.action &&
+				   lhs.state == rhs.state &&
+				   lhs.nonTerminal == rhs.nonTerminal;
+		}
+
+		friend bool operator!=(const ActionState& lhs, const ActionState& rhs)
+		{
+			return !(rhs == lhs);
+		}
+
 		std::string stringify(NonTerminalNames const& nonTerminalNames) {
 			std::stringstream s;
 			s << "[" << (action == Shift ? "S" : action == Reduce ? "R" : action == Accept ? "A" : action == Error ? "E" : throw ParserError("invalid action"))
@@ -650,11 +662,11 @@ namespace parser {
         bool operator()(CanonicalItem const& rhs) const { return s == rhs.situations; }
     };
 
-typedef std::set<lexer::Terminal> UniqueTerminals;
+	typedef std::set<lexer::Terminal> UniqueTerminals;
 
-typedef std::set<NonTerminal> UniqueNonTerminals;
+	typedef std::set<NonTerminal> UniqueNonTerminals;
 
-class Parser {
+	class Parser {
     public:
         explicit Parser(Rules const& rules = Rules(),
                         lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
@@ -699,16 +711,39 @@ class Parser {
 			for (size_t i = 0; i < canonicalSet.size(); ++i) {
 				for_each_c(Situations, canonicalSet.at(i).situations, situation) {
 					for_each(UniqueTerminals, uniqueTerminals, terminal) {
-						if (situation->body.size() == situation->point)
-							continue;
-						if (!situation->body.at(situation->point).isTerminal)
-							continue;
+						if (situation->body.size() == situation->point) {
+							ActionState actionState(Reduce, i, situation->header);
+							std::cout << actionTable.at(i).at(*terminal).stringify(nonTerminalNames)
+									  << " -> "
+									  << actionState.stringify(nonTerminalNames) << std::endl;
+							if (actionTable.at(i).at(*terminal) == ActionState()) {
+								if (situation->header == StartNonTerminal) {
+									actionTable.at(i).at(*terminal) = ActionState(Accept);
+								} else {
+									actionTable.at(i).at(*terminal) = actionState;
+								}
+							} else {
+								throw ParserError(common::xsnprintf(64, "state %zu : terminal %d conflict ", i, *terminal));
+							}
+						} else {
+							if (!situation->body.at(situation->point).isTerminal)
+								continue;
 
-						Situations goToSits = goTo(rules, canonicalSet.at(i).situations, GrammaticSymbol(*terminal));
+							Situations goToSits = goTo(rules, canonicalSet.at(i).situations, GrammaticSymbol(*terminal));
 
-						for (size_t j = 0; j < canonicalSet.size(); ++j) {
-							if (canonicalSet.at(j).situations == goToSits)
-								actionTable.at(i).at(*terminal) = ActionState(Shift, j);
+							for (size_t j = 0; j < canonicalSet.size(); ++j) {
+								if (canonicalSet.at(j).situations == goToSits) {
+									ActionState actionState(Shift, j);
+									std::cout << actionTable.at(i).at(*terminal).stringify(nonTerminalNames)
+											  << " -> " << actionState.stringify(nonTerminalNames) << std::endl;
+									if (actionTable.at(i).at(*terminal) != actionState) {
+										if (actionTable.at(i).at(*terminal) == ActionState())
+											actionTable.at(i).at(*terminal) = actionState;
+										else
+											throw ParserError(common::xsnprintf(64, "state %zu : terminal %d conflict ", i, *terminal));
+									}
+								}
+							}
 						}
 					}
 				}
@@ -1459,6 +1494,9 @@ int main() {
                 ("Test Bool", false) << std::endl;
 
         std::cout << std::endl;
+
+		size_t i = 0;
+		printf("%zu", i);
    }
     catch (std::exception const& e) {
         std::cerr << e.what() << std::endl;
