@@ -1051,7 +1051,7 @@ namespace json {
             Value,
         };
 
-        typedef parser::GrammaticSymbol ConvItem;
+        typedef parser::GrammaticSymbol GrammaticSym;
         typedef parser::Rules Rules;
         typedef parser::MakeRules MakeRules;
         typedef parser::MakeItems MakeItems;
@@ -1081,35 +1081,35 @@ namespace json {
 
         static Rules jsonGrammarRules = MakeRules
                 (Json, MakeItems
-                        (MakeVariant(ConvItem(Object, false)))
-                        (MakeVariant(ConvItem(Array, false)))
+                        (MakeVariant(GrammaticSym(Object, false)))
+                        (MakeVariant(GrammaticSym(Array, false)))
                 )
                 (Object, MakeItems
-                        (MakeVariant(ConvItem(ObjectStart))(ConvItem(Records, false))(ConvItem(ObjectEnd)))
-                        (MakeVariant(ConvItem(ObjectStart))(ConvItem(ObjectEnd)))
+                        (MakeVariant(GrammaticSym(ObjectStart))(GrammaticSym(Records, false))(GrammaticSym(ObjectEnd)))
+                        (MakeVariant(GrammaticSym(ObjectStart))(GrammaticSym(ObjectEnd)))
                 )
                 (Array, MakeItems
-                        (MakeVariant(ConvItem(ArrayStart))(ConvItem(Values, false))(ConvItem(ArrayEnd)))
-                        (MakeVariant(ConvItem(ArrayStart))(ConvItem(ArrayEnd)))
+                        (MakeVariant(GrammaticSym(ArrayStart))(GrammaticSym(Values, false))(GrammaticSym(ArrayEnd)))
+                        (MakeVariant(GrammaticSym(ArrayStart))(GrammaticSym(ArrayEnd)))
                 )
                 (Records, MakeItems
-                        (MakeVariant(ConvItem(Record, false))(ConvItem(Comma))(ConvItem(Records, false)))
-                        (MakeVariant(ConvItem(Record, false)))
+                        (MakeVariant(GrammaticSym(Record, false))(GrammaticSym(Comma))(GrammaticSym(Records, false)))
+                        (MakeVariant(GrammaticSym(Record, false)))
                 )
                 (Record, MakeItems
-                        (MakeVariant(ConvItem(String))(ConvItem(Semicolon))(ConvItem(Value, false)))
+                        (MakeVariant(GrammaticSym(String))(GrammaticSym(Semicolon))(GrammaticSym(Value, false)))
                 )
                 (Values, MakeItems
-                        (MakeVariant(ConvItem(Value, false))(ConvItem(Comma))(ConvItem(Values, false)))
-                        (MakeVariant(ConvItem(Value, false)))
+                        (MakeVariant(GrammaticSym(Value, false))(GrammaticSym(Comma))(GrammaticSym(Values, false)))
+                        (MakeVariant(GrammaticSym(Value, false)))
                 )
                 (Value, MakeItems
-                        (MakeVariant(ConvItem(Object, false)))
-                        (MakeVariant(ConvItem(Array, false)))
-                        (MakeVariant(ConvItem(String)))
-                        (MakeVariant(ConvItem(Float)))
-                        (MakeVariant(ConvItem(Integer)))
-                        (MakeVariant(ConvItem(Bool)))
+                        (MakeVariant(GrammaticSym(Object, false)))
+                        (MakeVariant(GrammaticSym(Array, false)))
+                        (MakeVariant(GrammaticSym(String)))
+                        (MakeVariant(GrammaticSym(Float)))
+                        (MakeVariant(GrammaticSym(Integer)))
+                        (MakeVariant(GrammaticSym(Bool)))
                 )
         ;
 
@@ -1494,10 +1494,7 @@ int main() {
                 ("Test Bool", false) << std::endl;
 
         std::cout << std::endl;
-
-		size_t i = 0;
-		printf("%zu", i);
-   }
+   	}
     catch (std::exception const& e) {
         std::cerr << e.what() << std::endl;
     }
