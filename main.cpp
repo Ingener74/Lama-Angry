@@ -865,13 +865,15 @@ namespace parser {
             StateStack stateStack;
             Nodes nodeStack;
             stateStack.push_back(StartNonTerminal);
-            for (Tokens::const_iterator token = tokens.begin(); token != tokens.end(); /*++token*/) {
+            for (Tokens::const_iterator token = tokens.begin(); /*token != tokens.end()*/; /*++token*/) {
                 ActionState actionState = action(stateStack.back(), token->tokenId);
                 if (actionState.action == Shift) {
                     nodeStack.push_back(Node(*token));
                     stateStack.push_back(actionState.state);
+                    
                     stringifyStep(std::cout, stateStack, nodeStack, actionState, *token, terminalNames, nonTerminalNames);
                     std::cout << std::endl;
+                    
                     ++token;
                 } else if (actionState.action == Reduce) {
                     Nodes nodes;
@@ -882,7 +884,9 @@ namespace parser {
 
                     nodeStack.erase(start, nodeStack.end());
                     nodeStack.push_back(Node(Production(actionState.nonTerminal, nodes)));
-                    stateStack.pop_back();
+
+                    for (size_t i = 0; i < actionState.reduceCount; ++i)
+                        stateStack.pop_back();
                     stateStack.push_back(goTo(stateStack.back(), actionState.nonTerminal));
 
                     stringifyStep(std::cout, stateStack, nodeStack, actionState, *token, terminalNames, nonTerminalNames);
@@ -895,20 +899,20 @@ namespace parser {
                            : throw ParserError("work done but, stack contains more than one element");
                 }
             }
-            throw ParserError("unexpected end of token string");
         }
 
         std::ostream& stringifyStep(std::ostream& out, StateStack const& stateStack, Nodes const& nodes, ActionState const& actionState,
                                   Token const& nextToken,
                                   lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
                                   NonTerminalNames const& nonTerminalNames = NonTerminalNames()) {
+            const int w = 120;
             {
                 std::stringstream s;
                 for_each_c(StateStack, stateStack, state) {
                     if (state != stateStack.begin()) s << " ";
                     s << *state;
                 }
-                out << std::setw(48) << std::left << s.str();
+                out << std::setw(w) << std::left << s.str();
             }
             out << "; ";
 
@@ -918,21 +922,21 @@ namespace parser {
                     if (node != nodes.begin()) s << ", ";
                     node->stringify(s, terminalNames, nonTerminalNames);
                 }
-                out << std::setw(48) << std::left << s.str();
+                out << std::setw(w) << std::left << s.str();
             }
             out << "; ";
 
             {
                 std::stringstream s;
                 nextToken.stringify(s, terminalNames, 0);
-                out << std::setw(48) << std::left << s.str();
+                out << std::setw(w) << std::left << s.str();
             }
             out << "; ";
 
             {
                 std::stringstream s;
                 actionState.stringify(s, nonTerminalNames);
-                out << std::setw(48) << std::left << s.str();
+                out << std::setw(w) << std::left << s.str();
             }
             return out;
         }
