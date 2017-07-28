@@ -262,7 +262,6 @@ namespace lexer {
                   startLine(startLine), endLine(endLine), startSymbol(startSymbol), endSymbol(endSymbol) {}
 
         std::ostream& stringify(std::ostream& out, TerminalNames const& terminalNames, int maxTerminalNameLength) const {
-            TerminalNames::const_iterator terminalNameIt = terminalNames.find(tokenId);
             return out << "("
                        << std::setw(2) << startLine
                        << ", " << std::setw(2) << endLine
@@ -270,8 +269,7 @@ namespace lexer {
                        << ", " << std::setw(2) << endSymbol
                        << "), "
                        << "token: " << std::setw(maxTerminalNameLength)
-                       << (terminalNameIt == terminalNames.end() ? common::xsnprintf(32, "%d", tokenId)
-                                                                 : terminalNameIt->second) << ", "
+                       << terminalName(tokenId, terminalNames) << ", "
                        << (value.empty() ? "" : " value: " + value);
         }
 
@@ -467,7 +465,7 @@ namespace parser {
     typedef int State;
 
 	typedef std::vector<State> StateStack;
-    typedef std::vector<std::vector<State> > StateTable;
+    typedef std::vector<State> StateTable;
 
     const State StartState = 0;
     const NonTerminal StartNonTerminal = 0;
@@ -505,15 +503,18 @@ namespace parser {
         Action action;
         State state;
 		NonTerminal nonTerminal;
+        size_t reduceCount;
 
-        explicit ActionState(Action action = Error, State state = StartState, NonTerminal nonTerminal = Invalid) :
-                action(action), state(state), nonTerminal(nonTerminal) {}
+        explicit ActionState(Action action = Error, State state = StartState, NonTerminal nonTerminal = Invalid, size_t reduceCount = 0) :
+                action(action), state(state), nonTerminal(nonTerminal), reduceCount(reduceCount)
+        {}
 
 		friend bool operator==(const ActionState& lhs, const ActionState& rhs)
 		{
 			return lhs.action == rhs.action &&
 				   lhs.state == rhs.state &&
-				   lhs.nonTerminal == rhs.nonTerminal;
+				   lhs.nonTerminal == rhs.nonTerminal &&
+                   lhs.reduceCount == rhs.reduceCount;
 		}
 
 		friend bool operator!=(const ActionState& lhs, const ActionState& rhs)
@@ -521,14 +522,20 @@ namespace parser {
 			return !(rhs == lhs);
 		}
 
-		std::string stringify(NonTerminalNames const& nonTerminalNames) {
-			std::stringstream s;
-			s << "[" << (action == Shift ? "S" : action == Reduce ? "R" : action == Accept ? "A" : action == Error ? "E" : throw ParserError("invalid action"))
-			  << ", " << state
-			  << (nonTerminal == Invalid ? "" : ", ")
-			  << (nonTerminal == Invalid ? "" : nonTerminalName(nonTerminal, nonTerminalNames)) << "]";
-			return s.str();
-		}
+        std::ostream& stringify(std::ostream& out, NonTerminalNames const& nonTerminalNames) const {
+            out << "[" << (action == Shift ? "S" : action == Reduce ? "R" : action == Accept ? "A" : action == Error ? "E" : throw ParserError("invalid action"))
+                << ", " << state;
+            if (nonTerminal == Invalid)
+                return out << "]";
+            return out << ", "
+                       << nonTerminalName(nonTerminal, nonTerminalNames)
+                       << reduceCount  << "]";
+        }
+        std::string stringify(NonTerminalNames const& nonTerminalNames) const {
+            std::stringstream s;
+            stringify(s, nonTerminalNames);
+            return s.str();
+        }
     };
     typedef std::vector<std::vector<ActionState> > States;
 
@@ -578,26 +585,25 @@ namespace parser {
             return stream.str();
         }
 
-        std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent = 0) const {
+        std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent) const {
             std::string indentation = indent2string(indent);
             if (isProduction_) {
-                NonTerminalNames::const_iterator nonTerminalNameIt = nonTerminalNames.find(production.nonTerminal);
-                out << indentation
-                       << (nonTerminalNameIt == nonTerminalNames.end() ? to_string(production.nonTerminal)
-                                                                       : nonTerminalNameIt->second) << ": {\n";
+                out << indentation << nonTerminalName(production.nonTerminal, nonTerminalNames) << ": {\n";
                 for_each_c(Nodes, production.nodes, node) {
                     node->stringify(out, terminalNames, nonTerminalNames, indent + 1);
                 }
                 out << indentation << "}\n";
             } else {
-                lexer::TerminalNames::const_iterator terminalNameIt = terminalNames.find(token.tokenId);
-                out << indentation
-                       << (terminalNameIt == terminalNames.end() ? to_string(token.tokenId) : terminalNameIt->second)
-                       << ": {\n";
+                out << indentation << lexer::terminalName(token.tokenId, terminalNames) << ": {\n";
                 out << indentation << token.value << "\n";
                 out << indentation << "}\n";
             }
             return out;
+        }
+
+        std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
+            return out << (isProduction_ ? nonTerminalName(production.nonTerminal, nonTerminalNames)
+                                         : lexer::terminalName(token.tokenId, terminalNames));
         }
 
         friend std::ostream& operator<<(std::ostream& os, const Node& node);
@@ -705,14 +711,15 @@ namespace parser {
 
             actionTable.resize(states * terminals);
             goToTable.resize(states * nonTerminals);
+            for_each(StateTable, goToTable, gt) *gt = -1;
 
             for (size_t i = 0; i < canonicalSet.size(); ++i) {
                 for_each_c(Situations, canonicalSet.at(i).situations, situation) {
                     for_each(UniqueTerminals, uniqueTerminals, terminal) {
                         if (situation->body.size() == situation->point) {
                             getAction(i, *terminal).push_back(
-                                    situation->header == StartNonTerminal ? ActionState(Accept)
-                                                                          : ActionState(Reduce, i, situation->header));
+                                    situation->header == StartNonTerminal ? ActionState(Accept, 0, 0, 0)
+                                                                          : ActionState(Reduce, i, situation->header, situation->body.size()));
                         } else {
                             if (!situation->body.at(situation->point).isTerminal)
                                 continue;
@@ -721,13 +728,21 @@ namespace parser {
 
                             for (size_t j = 0; j < canonicalSet.size(); ++j) {
                                 if (canonicalSet.at(j).situations == goToSits) {
-                                    ActionState actionState(Shift, j);
+                                    ActionState actionState(Shift, j, 0, 0);
                                     std::vector<ActionState>& actions = getAction(i, *terminal);
                                     if (std::find(actions.begin(), actions.end(), actionState) == actions.end()) {
                                         actions.push_back(actionState);
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+                for_each(UniqueNonTerminals, uniqueNonTerminals, nonTerminal) {
+                    Situations gts = goTo(rules, canonicalSet.at(i).situations, GrammaticSymbol(*nonTerminal, false));
+                    for (State j = 0; j < canonicalSet.size(); ++j) {
+                        if (gts == canonicalSet.at(j).situations) {
+                            getGoTo(i, *nonTerminal) = j;
                         }
                     }
                 }
@@ -844,23 +859,34 @@ namespace parser {
             return goToClosure;
         }
 
-        Node parse(lexer::Tokens const& tokens) {
+        Node parse(lexer::Tokens const& tokens,
+                   lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
+                   NonTerminalNames const& nonTerminalNames = NonTerminalNames()) {
             StateStack stateStack;
             Nodes nodeStack;
-            for_each_c (Tokens, tokens, token) {
+            stateStack.push_back(StartNonTerminal);
+            for (Tokens::const_iterator token = tokens.begin(); token != tokens.end(); /*++token*/) {
                 ActionState actionState = action(stateStack.back(), token->tokenId);
                 if (actionState.action == Shift) {
-//                    nodeStack.push_back(Node(*token));
+                    nodeStack.push_back(Node(*token));
                     stateStack.push_back(actionState.state);
+                    stringifyStep(std::cout, stateStack, nodeStack, actionState, *token, terminalNames, nonTerminalNames);
+                    std::cout << std::endl;
+                    ++token;
                 } else if (actionState.action == Reduce) {
-//                    Nodes nodes;
-//                    Nodes::iterator start = nodeStack.begin() + (nodeStack.size() - actionState.reduceCount);
-//                    std::copy(start,
-//                              nodeStack.end(),
-//                              std::back_inserter(nodes));
-//                    nodes.erase(start, nodeStack.end());
-//                    nodeStack.push_back(Node(Production(actionState.state, nodes)));
-                    stateStack.push_back(goTo(stateStack.back(), Invalid/* TODO non terminal from reduce table cell */));
+                    Nodes nodes;
+                    Nodes::iterator start = nodeStack.end() - actionState.reduceCount;
+                    std::copy(start,
+                              nodeStack.end(),
+                              std::back_inserter(nodes));
+
+                    nodeStack.erase(start, nodeStack.end());
+                    nodeStack.push_back(Node(Production(actionState.nonTerminal, nodes)));
+                    stateStack.pop_back();
+                    stateStack.push_back(goTo(stateStack.back(), actionState.nonTerminal));
+
+                    stringifyStep(std::cout, stateStack, nodeStack, actionState, *token, terminalNames, nonTerminalNames);
+                    std::cout << std::endl;
                 } else if (actionState.action == Error) {
                     throw ParserError("error state");
                 } else if (actionState.action == Accept) {
@@ -872,30 +898,94 @@ namespace parser {
             throw ParserError("unexpected end of token string");
         }
 
+        std::ostream& stringifyStep(std::ostream& out, StateStack const& stateStack, Nodes const& nodes, ActionState const& actionState,
+                                  Token const& nextToken,
+                                  lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
+                                  NonTerminalNames const& nonTerminalNames = NonTerminalNames()) {
+            {
+                std::stringstream s;
+                for_each_c(StateStack, stateStack, state) {
+                    if (state != stateStack.begin()) s << " ";
+                    s << *state;
+                }
+                out << std::setw(48) << std::left << s.str();
+            }
+            out << "; ";
+
+            {
+                std::stringstream s;
+                for_each_c(Nodes, nodes, node) {
+                    if (node != nodes.begin()) s << ", ";
+                    node->stringify(s, terminalNames, nonTerminalNames);
+                }
+                out << std::setw(48) << std::left << s.str();
+            }
+            out << "; ";
+
+            {
+                std::stringstream s;
+                nextToken.stringify(s, terminalNames, 0);
+                out << std::setw(48) << std::left << s.str();
+            }
+            out << "; ";
+
+            {
+                std::stringstream s;
+                actionState.stringify(s, nonTerminalNames);
+                out << std::setw(48) << std::left << s.str();
+            }
+            return out;
+        }
+
         std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
-            std::stringstream s;
-            size_t w = 0;
+            std::vector<std::string> actionsCells(states * terminals);
+            std::vector<std::string> goToCells(states * nonTerminals);
+            std::vector<size_t> actionWidths(terminals);
+            std::vector<size_t> gotoWidths(nonTerminals);
+
             for (size_t i = 0; i < states; ++i) {
                 for (size_t j = 0; j < terminals; ++j) {
-                    w = std::max(w, getAction(i, j).size());
+                    std::stringstream s;
+                    for (size_t n = 0; n < getAction(i, j).size(); ++n) {
+                        if (n > 0) s << ", ";
+                        const std::string& string = getAction(i, j).at(n).stringify(nonTerminalNames);
+                        s << string;
+                    }
+                    std::string& str = actionsCells.at(i * terminals + j);
+                    str = s.str();
+                    actionWidths.at(j) = std::max(actionWidths.at(j), str.size());
                 }
             }
+
+            for (size_t i = 0; i < states; ++i) {
+                for (size_t j = 0; j < nonTerminals; ++j) {
+                    std::stringstream s;
+                    s << getGoTo(i, j);
+                    std::string& str = goToCells.at(i * nonTerminals + j);
+                    str = s.str();
+                    gotoWidths.at(j) = std::max(gotoWidths.at(j), str.size());
+                }
+            }
+
+            std::stringstream s;
+
             for (size_t i = 0; i < states; ++i) {
                 if (i > 0) s << "\n";
                 for (size_t j = 0; j < terminals; ++j) {
                     if (j > 0) s << ", ";
                     s << "[";
-                    int width = 14;
-                    size_t sw = width * w + 2 * (w - 1);
-                    for (size_t n = 0; n < getAction(i, j).size(); ++n) {
-                        if (n > 0) {
-                            s << ", ";
-                            sw -= 2;
-                        }
-                        s << std::setw(width) << getAction(i, j).at(n).stringify(nonTerminalNames);
-                        sw -= width;
-                    }
-                    s << std::setw(sw) << "]";
+                    std::string& str = actionsCells.at(i * terminals + j);
+                    s << str;
+                    size_t w = str.size();
+                    while (w++ < actionWidths.at(j)) s << " ";
+                    s << "]";
+                }
+                for (size_t j = 0; j < nonTerminals; ++j) {
+                    s << ", ";
+                    std::string& str = goToCells.at(i * nonTerminals + j);
+                    s << str;
+                    size_t w = str.size();
+                    while (w++ < gotoWidths.at(j)) s << " ";
                 }
             }
             return s.str();
@@ -903,11 +993,12 @@ namespace parser {
 
     private:
         ActionState action(State curState, lexer::Terminal terminal) {
-            return actionTable.at(curState).at(terminal);
+            std::vector<ActionState> const& act = getAction(curState, terminal);
+            return act.empty() ? ActionState(Shift, 0, 0, 0) : act.at(0);
         }
 
         State goTo(State curState, NonTerminal nonTerminal) {
-            return goToTable.at(curState).at(nonTerminal);
+            return goToTable.at(curState * nonTerminals + nonTerminal);
         }
 
         std::vector<ActionState>& getAction(State state, lexer::Terminal terminal) {
@@ -916,7 +1007,7 @@ namespace parser {
             return actionTable.at(state * terminals + terminal);
         }
 
-        std::vector<State>& getGoTo(State state, NonTerminal nonTerminal) {
+        State& getGoTo(State state, NonTerminal nonTerminal) {
             if (goToTable.empty())
                 throw ParserError("go to is empty");
             return goToTable.at(state * nonTerminals + nonTerminal);
@@ -1458,7 +1549,7 @@ namespace json {
 
 			std::cout << jsonParser.stringify(json::rules::terminalsNames, json::rules::nonTerminalNames) << std::endl;
 
-            parser::Node ast = jsonParser.parse(tokens);
+            parser::Node ast = jsonParser.parse(tokens, json::rules::terminalsNames, json::rules::nonTerminalNames);
 
             std::cout << ast << std::endl;
 
