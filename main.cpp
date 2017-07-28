@@ -393,22 +393,18 @@ namespace parser {
         int value; // Terminal or NonTerminal
         bool isTerminal;
 
-        explicit GrammaticSymbol(int value, bool isTerminal = true) : value(value), isTerminal(isTerminal)
-        {}
+        explicit GrammaticSymbol(int value, bool isTerminal = true) : value(value), isTerminal(isTerminal) {}
 
-        friend bool operator==(const GrammaticSymbol& lhs, const GrammaticSymbol& rhs)
-        {
+        friend bool operator==(const GrammaticSymbol& lhs, const GrammaticSymbol& rhs) {
             return lhs.value == rhs.value &&
                    lhs.isTerminal == rhs.isTerminal;
         }
 
-        friend bool operator!=(const GrammaticSymbol& lhs, const GrammaticSymbol& rhs)
-        {
+        friend bool operator!=(const GrammaticSymbol& lhs, const GrammaticSymbol& rhs) {
             return !(rhs == lhs);
         }
 
-        friend bool operator<(const GrammaticSymbol& lhs, const GrammaticSymbol& rhs)
-        {
+        friend bool operator<(const GrammaticSymbol& lhs, const GrammaticSymbol& rhs) {
             if (lhs.value < rhs.value)
                 return true;
             if (rhs.value < lhs.value)
@@ -575,7 +571,7 @@ namespace parser {
         static std::string indent2string(int indent = 0) {
             std::stringstream stream;
             while (indent--)
-                stream << "    ";
+                stream << "  ";
             return stream.str();
         }
 
@@ -588,15 +584,14 @@ namespace parser {
         std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent) const {
             std::string indentation = indent2string(indent);
             if (isProduction_) {
-                out << indentation << nonTerminalName(production.nonTerminal, nonTerminalNames) << ": {\n";
+                out << nonTerminalName(production.nonTerminal, nonTerminalNames) << "+";
                 for_each_c(Nodes, production.nodes, node) {
+                    out << std::endl;
+                    out << indentation;
                     node->stringify(out, terminalNames, nonTerminalNames, indent + 1);
                 }
-                out << indentation << "}\n";
             } else {
-                out << indentation << lexer::terminalName(token.tokenId, terminalNames) << ": {\n";
-                out << indentation << token.value << "\n";
-                out << indentation << "}\n";
+                out << lexer::terminalName(token.tokenId, terminalNames) << " - " << token.value;
             }
             return out;
         }
@@ -942,40 +937,62 @@ namespace parser {
         }
 
         std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
-            std::vector<std::string> actionsCells(states * terminals);
-            std::vector<std::string> goToCells(states * nonTerminals);
-            std::vector<size_t> actionWidths(terminals);
+
+            size_t extStates = terminals + 1;
+            size_t extTerminals = terminals + 1;
+
+            std::vector<std::string> actionsCells((states + 1) * (terminals + 1));
+            std::vector<std::string> goToCells((states + 1) * (nonTerminals));
+            std::vector<size_t> actionWidths(terminals + 1);
             std::vector<size_t> gotoWidths(nonTerminals);
 
-            for (size_t i = 0; i < states; ++i) {
-                for (size_t j = 0; j < terminals; ++j) {
-                    std::stringstream s;
-                    for (size_t n = 0; n < getAction(i, j).size(); ++n) {
-                        if (n > 0) s << ", ";
-                        const std::string& string = getAction(i, j).at(n).stringify(nonTerminalNames);
-                        s << string;
-                    }
-                    std::string& str = actionsCells.at(i * terminals + j);
-                    str = s.str();
-                    actionWidths.at(j) = std::max(actionWidths.at(j), str.size());
-                }
-            }
+//			for (size_t i = 0; i < states; ++i) {
+//				std::string& str = actionsCells.at((i + 1) * terminals + (j + 1));
+//				str = s.str();
+//				actionWidths.at(j) = std::max(actionWidths.at(j), str.size());
+//			}
 
-            for (size_t i = 0; i < states; ++i) {
-                for (size_t j = 0; j < nonTerminals; ++j) {
-                    std::stringstream s;
-                    s << getGoTo(i, j);
-                    std::string& str = goToCells.at(i * nonTerminals + j);
-                    str = s.str();
-                    gotoWidths.at(j) = std::max(gotoWidths.at(j), str.size());
-                }
-            }
+			for (int i = 0; i < states; ++i) {
+				std::stringstream s;
+				s << i;
+				std::string& str = actionsCells.at((i + 1) * (terminals + 1));
+				str = s.str();
+				actionWidths.at(0) = std::max(actionWidths.at(0), str.size());
+			}
+			for (size_t i = 0; i < terminals; ++i) {
+				std::string str = lexer::terminalName(i, terminalNames);
+				actionsCells.at(i + 1) = str;
+				actionWidths.at(i + 1) = std::max(actionWidths.at(i + 1), str.size());
+			}
+//            for (size_t i = 0; i < states; ++i) {
+//                for (size_t j = 0; j < terminals; ++j) {
+//                    std::stringstream s;
+//                    for (size_t n = 0; n < getAction(i, j).size(); ++n) {
+//                        if (n > 0) s << ", ";
+//                        const std::string& string = getAction(i, j).at(n).stringify(nonTerminalNames);
+//                        s << string;
+//                    }
+//                    std::string& str = actionsCells.at((i + 1) * terminals + (j + 1));
+//                    str = s.str();
+//                    actionWidths.at(j + 1) = std::max(actionWidths.at(j + 1), str.size());
+//                }
+//            }
+//
+//            for (size_t i = 0; i < states; ++i) {
+//                for (size_t j = 0; j < nonTerminals; ++j) {
+//                    std::stringstream s;
+//                    s << getGoTo(i, j);
+//                    std::string& str = goToCells.at((i + 1) * nonTerminals + j);
+//                    str = s.str();
+//                    gotoWidths.at(j) = std::max(gotoWidths.at(j), str.size());
+//                }
+//            }
 
             std::stringstream s;
 
-            for (size_t i = 0; i < states; ++i) {
+            for (size_t i = 0; i < (states + 1); ++i) {
                 if (i > 0) s << "\n";
-                for (size_t j = 0; j < terminals; ++j) {
+                for (size_t j = 0; j < (terminals + 1); ++j) {
                     if (j > 0) s << ", ";
                     s << "[";
                     std::string& str = actionsCells.at(i * terminals + j);
@@ -1575,7 +1592,7 @@ namespace lexer {
 }
 namespace parser {
     std::ostream& operator<<(std::ostream& os, const parser::Node& node) {
-        return node.stringify(os, json::rules::terminalsNames, json::rules::nonTerminalNames);
+        return node.stringify(os, json::rules::terminalsNames, json::rules::nonTerminalNames, 0);
     }
 }
 
