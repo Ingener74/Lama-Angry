@@ -938,64 +938,63 @@ namespace parser {
 
         std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
 
-            size_t extStates = terminals + 1;
+            size_t extStates = states + 1;
             size_t extTerminals = terminals + 1;
 
-            std::vector<std::string> actionsCells((states + 1) * (terminals + 1));
-            std::vector<std::string> goToCells((states + 1) * (nonTerminals));
-            std::vector<size_t> actionWidths(terminals + 1);
+            std::vector<std::string> actionsCells(extStates * extTerminals);
+            std::vector<std::string> goToCells(extStates * nonTerminals);
+            std::vector<size_t> actionWidths(extTerminals);
             std::vector<size_t> gotoWidths(nonTerminals);
 
-//			for (size_t i = 0; i < states; ++i) {
-//				std::string& str = actionsCells.at((i + 1) * terminals + (j + 1));
-//				str = s.str();
-//				actionWidths.at(j) = std::max(actionWidths.at(j), str.size());
-//			}
+            for (int i = 0; i < states; ++i) {
+                std::stringstream s;
+                s << i;
+                std::string& str = actionsCells.at((i + 1) * extTerminals);
+                str = s.str();
+                actionWidths.at(0) = std::max(actionWidths.at(0), str.size());
+            }
+            for (size_t i = 0; i < terminals; ++i) {
+                std::string str = lexer::terminalName(i, terminalNames);
+                actionsCells.at(i + 1) = str;
+                actionWidths.at(i + 1) = std::max(actionWidths.at(i + 1), str.size());
+            }
+            for (size_t i = 0; i < nonTerminals; ++i) {
+                std::string str = nonTerminalName(i, nonTerminalNames);
+                goToCells.at(i) = str;
+                gotoWidths.at(i) = std::max(gotoWidths.at(i), str.size());
+            }
+            for (size_t i = 0; i < states; ++i) {
+                for (size_t j = 0; j < terminals; ++j) {
+                    std::stringstream s;
+                    for (size_t n = 0; n < getAction(i, j).size(); ++n) {
+                        if (n > 0) s << ", ";
+                        const std::string& string = getAction(i, j).at(n).stringify(nonTerminalNames);
+                        s << string;
+                    }
+                    std::string& str = actionsCells.at((i + 1) * extTerminals + (j + 1));
+                    str = s.str();
+                    actionWidths.at(j + 1) = std::max(actionWidths.at(j + 1), str.size());
+                }
+            }
 
-			for (int i = 0; i < states; ++i) {
-				std::stringstream s;
-				s << i;
-				std::string& str = actionsCells.at((i + 1) * (terminals + 1));
-				str = s.str();
-				actionWidths.at(0) = std::max(actionWidths.at(0), str.size());
-			}
-			for (size_t i = 0; i < terminals; ++i) {
-				std::string str = lexer::terminalName(i, terminalNames);
-				actionsCells.at(i + 1) = str;
-				actionWidths.at(i + 1) = std::max(actionWidths.at(i + 1), str.size());
-			}
-//            for (size_t i = 0; i < states; ++i) {
-//                for (size_t j = 0; j < terminals; ++j) {
-//                    std::stringstream s;
-//                    for (size_t n = 0; n < getAction(i, j).size(); ++n) {
-//                        if (n > 0) s << ", ";
-//                        const std::string& string = getAction(i, j).at(n).stringify(nonTerminalNames);
-//                        s << string;
-//                    }
-//                    std::string& str = actionsCells.at((i + 1) * terminals + (j + 1));
-//                    str = s.str();
-//                    actionWidths.at(j + 1) = std::max(actionWidths.at(j + 1), str.size());
-//                }
-//            }
-//
-//            for (size_t i = 0; i < states; ++i) {
-//                for (size_t j = 0; j < nonTerminals; ++j) {
-//                    std::stringstream s;
-//                    s << getGoTo(i, j);
-//                    std::string& str = goToCells.at((i + 1) * nonTerminals + j);
-//                    str = s.str();
-//                    gotoWidths.at(j) = std::max(gotoWidths.at(j), str.size());
-//                }
-//            }
+            for (size_t i = 0; i < states; ++i) {
+                for (size_t j = 0; j < nonTerminals; ++j) {
+                    std::stringstream s;
+                    s << getGoTo(i, j);
+                    std::string& str = goToCells.at((i + 1) * nonTerminals + j);
+                    str = s.str();
+                    gotoWidths.at(j) = std::max(gotoWidths.at(j), str.size());
+                }
+            }
 
             std::stringstream s;
 
-            for (size_t i = 0; i < (states + 1); ++i) {
+            for (size_t i = 0; i < extStates; ++i) {
                 if (i > 0) s << "\n";
-                for (size_t j = 0; j < (terminals + 1); ++j) {
+                for (size_t j = 0; j < extTerminals; ++j) {
                     if (j > 0) s << ", ";
                     s << "[";
-                    std::string& str = actionsCells.at(i * terminals + j);
+                    std::string& str = actionsCells.at(i * extTerminals + j);
                     s << str;
                     size_t w = str.size();
                     while (w++ < actionWidths.at(j)) s << " ";
