@@ -495,28 +495,26 @@ namespace parser {
         explicit ParserError(const std::string& __arg) : runtime_error(__arg) {}
     };
 
-	struct ActionState {
+    struct ActionState {
         Action action;
         State state;
-		NonTerminal nonTerminal;
+        NonTerminal nonTerminal;
         size_t reduceCount;
 
         explicit ActionState(Action action = Error, State state = StartState, NonTerminal nonTerminal = Invalid, size_t reduceCount = 0) :
                 action(action), state(state), nonTerminal(nonTerminal), reduceCount(reduceCount)
         {}
 
-		friend bool operator==(const ActionState& lhs, const ActionState& rhs)
-		{
-			return lhs.action == rhs.action &&
-				   lhs.state == rhs.state &&
-				   lhs.nonTerminal == rhs.nonTerminal &&
+        friend bool operator==(const ActionState& lhs, const ActionState& rhs) {
+            return lhs.action == rhs.action &&
+                   lhs.state == rhs.state &&
+                   lhs.nonTerminal == rhs.nonTerminal &&
                    lhs.reduceCount == rhs.reduceCount;
-		}
+        }
 
-		friend bool operator!=(const ActionState& lhs, const ActionState& rhs)
-		{
-			return !(rhs == lhs);
-		}
+        friend bool operator!=(const ActionState& lhs, const ActionState& rhs) {
+            return !(rhs == lhs);
+        }
 
         std::ostream& stringify(std::ostream& out, NonTerminalNames const& nonTerminalNames) const {
             out << "[" << (action == Shift ? "S" : action == Reduce ? "R" : action == Accept ? "A" : action == Error ? "E" : throw ParserError("invalid action"))
@@ -524,7 +522,7 @@ namespace parser {
             if (nonTerminal == Invalid)
                 return out << "]";
             return out << ", "
-                       << nonTerminalName(nonTerminal, nonTerminalNames)
+                       << nonTerminalName(nonTerminal, nonTerminalNames) << ", "
                        << reduceCount  << "]";
         }
         std::string stringify(NonTerminalNames const& nonTerminalNames) const {
@@ -584,14 +582,12 @@ namespace parser {
         std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent) const {
             std::string indentation = indent2string(indent);
             if (isProduction_) {
-                out << nonTerminalName(production.nonTerminal, nonTerminalNames) << "+";
+                out << indentation << "+" << nonTerminalName(production.nonTerminal, nonTerminalNames) << std::endl;
                 for_each_c(Nodes, production.nodes, node) {
-                    out << std::endl;
-                    out << indentation;
                     node->stringify(out, terminalNames, nonTerminalNames, indent + 1);
                 }
             } else {
-                out << lexer::terminalName(token.tokenId, terminalNames) << " - " << token.value;
+                out << indentation << "+" << lexer::terminalName(token.tokenId, terminalNames) << " - " << token.value << std::endl;
             }
             return out;
         }
@@ -831,7 +827,9 @@ namespace parser {
             }
         }
 
-        static Situations goTo(Rules const& grammar, Situations const& situations, GrammaticSymbol const& grammaticSymbol/*,
+        static Situations goTo(Rules const& grammar,
+                               Situations const& situations,
+                               GrammaticSymbol const& grammaticSymbol/*,
                                lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
                                NonTerminalNames const& nonTerminalNames = NonTerminalNames()*/) {
             Situations goToSituations;
@@ -896,10 +894,13 @@ namespace parser {
             }
         }
 
-        std::ostream& stringifyStep(std::ostream& out, StateStack const& stateStack, Nodes const& nodes, ActionState const& actionState,
-                                  Token const& nextToken,
-                                  lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
-                                  NonTerminalNames const& nonTerminalNames = NonTerminalNames()) {
+        std::ostream& stringifyStep(std::ostream&                out,
+                                    StateStack            const& stateStack,
+                                    Nodes                 const& nodes,
+                                    ActionState           const& actionState,
+                                    Token                 const& nextToken,
+                                    lexer::TerminalNames  const& terminalNames    = lexer::TerminalNames(),
+                                    NonTerminalNames      const& nonTerminalNames = NonTerminalNames()) {
             const int w = 120;
             {
                 std::stringstream s;
@@ -1533,29 +1534,109 @@ namespace json {
         }
 
     private:
-        static Object createObject(parser::Node const& root) {
+        static void nextRecord(Object& object, parser::Node const& RS) {
+            parser::Node const& R = RS.getProduction().nodes.at(0);
+
+            parser::Node const& str = R.getProduction().nodes.at(0);
+            parser::Node const& V = R.getProduction().nodes.at(2);
+
+            std::string name = str.getToken().value;
+
+            parser::Node const& uv = V.getProduction().nodes.at(0);
+
+            std::stringstream s(uv.getToken().value);
+            lexer::TokenId tokenType = uv.getToken().tokenId;
+
+            if (tokenType == rules::Integer) {
+                int64_t i = 0;
+                s >> i;
+                object(name, i);
+            } else if (tokenType == rules::String) {
+                object(name, uv.getToken().value);
+            } else if (tokenType == rules::Float) {
+                double d = 0;
+                s >> d;
+                object(name, d);
+            } else if (tokenType == rules::Bool) {
+                bool b = false;
+                s >> b;
+                object(name, b);
+            } else if (tokenType == rules::Object) {
+                object(name, createObject(uv));
+            } else if (tokenType == rules::Array) {
+                object(name, createArray(uv));
+            } else {
+                throw JsonError("invalid token type");
+            }
+
+            if (RS.getProduction().nodes.size() > 1) {
+                parser::Node const& nextRs = RS.getProduction().nodes.at(2);
+                nextRecord(object, nextRs);
+            }
+        }
+
+        static Object createObject(parser::Node const& O) {
             Object object;
-//			for_each_c(parser::Nodes, root.getProduction().nodes, node) {
-//				if (node->isProduction()) {
-//					if (node->getProduction().nonTerminal == rules::String)
-//				}
-//			}
+            parser::Node const& RS = O.getProduction().nodes.at(1);
+            nextRecord(object, RS);
             return object;
         }
 
-        static Array createArray(parser::Node const& node) {
+        static void nextValue(Array& array, parser::Node const& VS) {
+            parser::Node const& V = VS.getProduction().nodes.at(0);
+
+            parser::Node const& uv = V.getProduction().nodes.at(0);
+
+            std::stringstream s(uv.getToken().value);
+            if (uv.getToken().tokenId == rules::Integer) {
+                int64_t i = 0;
+                s >> i;
+                array(i);
+            } else if (uv.getToken().tokenId == rules::String) {
+                array(uv.getToken().value);
+            } else if (uv.getToken().tokenId == rules::Float) {
+                double d = 0;
+                s >> d;
+                array(d);
+            } else if (uv.getToken().tokenId == rules::Bool) {
+                bool b = false;
+                s >> b;
+                array(b);
+            } else if (uv.getToken().tokenId == rules::Object) {
+                array(createObject(uv));
+            } else if (uv.getToken().tokenId == rules::Array) {
+                array(createArray(uv));
+            }
+
+            if (VS.getProduction().nodes.size() > 1) {
+                parser::Node const& nextVS = VS.getProduction().nodes.at(2);
+                nextValue(array, nextVS);
+            }
+        }
+
+        static Array createArray(parser::Node const& A) {
             Array array;
+            parser::Node const& VS = A.getProduction().nodes.at(1);
+            nextValue(array, VS);
             return array;
         }
 
-        void init(parser::Node const& node) {
-            if (node.isProduction())
-                if (rules::Object == node.getProduction().nonTerminal)
-                    object = createObject(node);
-                else if (rules::Array == node.getProduction().nonTerminal)
-                    array = createArray(node);
-                else
+        void init(parser::Node const& J) {
+            if (J.isProduction())
+                if (rules::Json == J.getProduction().nonTerminal) {
+                    parser::Node const& OorA = J.getProduction().nodes.front();
+                    if (rules::Object == OorA.getProduction().nonTerminal) {
+                        object = createObject(OorA);
+                        type = IsObject;
+                    } else if (rules::Array == OorA.getProduction().nonTerminal) {
+                        array = createArray(OorA);
+                        type = IsArray;
+                    } else {
+                        throw JsonError("invalid format");
+                    }
+                } else {
                     throw JsonError("invalid format");
+                }
             else
                 throw JsonError("invalid format");
         }
@@ -1567,7 +1648,7 @@ namespace json {
                 std::cout << *token << std::endl;
             }
 
-			std::cout << jsonParser.stringify(json::rules::terminalsNames, json::rules::nonTerminalNames) << std::endl;
+            std::cout << jsonParser.stringify(json::rules::terminalsNames, json::rules::nonTerminalNames) << std::endl;
 
             parser::Node ast = jsonParser.parse(tokens, json::rules::terminalsNames, json::rules::nonTerminalNames);
 
@@ -1582,12 +1663,12 @@ namespace json {
     };
 }
 namespace lexer {
-	std::ostream& operator<<(std::ostream& os, lexer::Token const& token) {
-		int maxNameLength = 0;
-		for_each_c(lexer::TerminalNames, json::rules::terminalsNames, terminalName)
-			maxNameLength = std::max<int>(maxNameLength, terminalName->second.size());
-		return token.stringify(os, json::rules::terminalsNames, maxNameLength);
-	}
+    std::ostream& operator<<(std::ostream& os, lexer::Token const& token) {
+        int maxNameLength = 0;
+        for_each_c(lexer::TerminalNames, json::rules::terminalsNames, terminalName)
+            maxNameLength = std::max<int>(maxNameLength, terminalName->second.size());
+        return token.stringify(os, json::rules::terminalsNames, maxNameLength);
+    }
 }
 namespace parser {
     std::ostream& operator<<(std::ostream& os, const parser::Node& node) {
@@ -1597,6 +1678,9 @@ namespace parser {
 
 int main() {
     try {
+
+        // Сделать ещё парсер yaml
+
         std::ifstream file("../test.json");
         json::Json js(file);
         json::Json json1;
