@@ -7,4 +7,4 @@ set(
         main.cpp
 )
 
-add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_SOURCES})
+add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_SOURCES} Lexer.cpp Lexer.h)

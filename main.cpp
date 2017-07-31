@@ -25,6 +25,11 @@
 #define for_each_c(container_type, container_obj, iterator_name) \
     for (container_type::const_iterator iterator_name = container_obj.begin(); iterator_name != container_obj.end(); ++iterator_name)
 
+// flexify
+// Yet another lexer and parser
+// Yalp
+// Lerser
+
 namespace common {
     typedef std::vector<char> ByteBuffer;
 
@@ -412,12 +417,10 @@ namespace parser {
             return lhs.isTerminal < rhs.isTerminal;
         }
 
-        std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
-            std::stringstream stringstream;
-            stringstream << std::setw(14)
+        std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
+            return out << std::setw(14)
                          << (isTerminal ? "Terminal" : "NonTerminal") << ": "
                          << (isTerminal ? lexer::terminalName(value, terminalNames) : nonTerminalName(value, nonTerminalNames));
-            return stringstream.str();
         }
     };
 
@@ -475,14 +478,13 @@ namespace parser {
         explicit Convolution(NonTerminal header = Invalid, Items const& body = Items()) : header(header), body(body)
         {}
 
-        virtual std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
-            std::stringstream stringstream;
-            stringstream << nonTerminalName(header, nonTerminalNames) << " -> ";
+        virtual std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
+            out << nonTerminalName(header, nonTerminalNames) << " -> ";
             for_each(Items, body, item) {
-                if (item != body.begin()) stringstream << ", ";
-                stringstream << item->stringify(terminalNames, nonTerminalNames);
+                if (item != body.begin()) out << ", ";
+                item->stringify(out, terminalNames, nonTerminalNames);
             }
-            return stringstream.str();
+            return out;
         }
 
         friend bool operator==(const Convolution& lhs, const Convolution& rhs) {
@@ -605,18 +607,17 @@ namespace parser {
         explicit Situation(NonTerminal nonTerminal = Invalid, Items const& items = Items()) : Convolution(nonTerminal, items), point(0) {
         }
 
-        virtual std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
-            std::stringstream stringstream;
-            stringstream << nonTerminalName(header, nonTerminalNames) << " -> ";
+        virtual std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
+            out << nonTerminalName(header, nonTerminalNames) << " -> ";
             for_each_c(Items, body, item) {
-                if (std::distance(body.begin(), item) == point) stringstream << "^";
-                stringstream << " "
+                if (std::distance(body.begin(), item) == point) out << "^";
+                out << " "
                              << (item->isTerminal ? lexer::terminalName(item->value, terminalNames) : nonTerminalName(item->value, nonTerminalNames))
                              << " ";
             }
             if (body.size() == point)
-                stringstream << "^";
-            return stringstream.str();
+                out << "^";
+            return out;
         }
 
         friend bool operator==(const Situation& lhs, const Situation& rhs) {
@@ -635,13 +636,13 @@ namespace parser {
 
         CanonicalItem(GrammaticSymbol const& terminal, Situations const& situations) : terminal(terminal),
                                                                                        situations(situations) {}
-        std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
-            std::stringstream stringstream;
-            stringstream << terminal.stringify(terminalNames, nonTerminalNames) << "\n";
-            for_each_c(Situations, situations, s)
-                stringstream << "\t\t" << s->stringify(terminalNames, nonTerminalNames) << "\n";
-            return stringstream.str();
-        }
+
+		std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
+            terminal.stringify(out, terminalNames, nonTerminalNames) << "\n";
+			for_each_c(Situations, situations, s)
+				s->stringify(out, terminalNames, nonTerminalNames) << "\n";
+			return out;
+		}
     };
 
     typedef std::vector<CanonicalItem> CanonicalSet;
@@ -653,23 +654,23 @@ namespace parser {
     };
 
     typedef std::set<lexer::Terminal> UniqueTerminals;
-
     typedef std::set<NonTerminal> UniqueNonTerminals;
 
     class Parser {
     public:
         explicit Parser(Rules const& rules = Rules(),
+						bool debug = false,
                         lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
-                        NonTerminalNames const& nonTerminalNames = NonTerminalNames()) : states(0), terminals(0),
-                                                                                         nonTerminals(0) {
+                        NonTerminalNames const& nonTerminalNames = NonTerminalNames()) :
+				states(0), terminals(0), nonTerminals(0), debug(debug), terminalNames(terminalNames),
+				nonTerminalNames(nonTerminalNames) {
             UniqueGrammaticSymbols uniqueGrammaticSymbols;
-            for_each_c(Rules, rules, rule) {
+            for_each_c(Rules, rules, rule)
+            {
                 uniqueGrammaticSymbols.insert(GrammaticSymbol(rule->first, false));
-                for_each_c(Variants, rule->second, variants) {
-                    for_each_c(Items, (*variants), item) {
+                for_each_c(Variants, rule->second, variants)
+                    for_each_c(Items, (*variants), item)
                         uniqueGrammaticSymbols.insert(*item);
-                    }
-                }
             }
 
             CanonicalSet canonicalSet = items(rules, uniqueGrammaticSymbols);
@@ -682,13 +683,6 @@ namespace parser {
             for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol)
                 if (!symbol->isTerminal)
                     uniqueNonTerminals.insert(symbol->value);
-
-//            std::cout << canonicalSet.size() << std::endl;
-//            for_each(CanonicalSet, canonicalSet, item)
-//                std::cout << item->stringify(terminalNames, nonTerminalNames) << std::endl;
-
-//            std::ofstream dotFile("canonical_set.dot");
-//            dotFile << dotStringify(rules, canonicalSet, terminalNames, nonTerminalNames);
 
             states = canonicalSet.size();
             terminals = uniqueTerminals.size();
@@ -732,22 +726,27 @@ namespace parser {
                     }
                 }
             }
+
+            if (debug) {
+                std::cout << "records in canonical set " << canonicalSet.size() << std::endl;
+                for_each(CanonicalSet, canonicalSet, item)
+                    item->stringify(std::cout, terminalNames, nonTerminalNames) << std::endl;
+                dotStringify(std::cout, rules, canonicalSet) << std::endl;
+                stringify();
+            }
         }
 
-        std::string dotStringify(Rules const& grammar,
-                                 CanonicalSet const& canonicalSet,
-                                 lexer::TerminalNames const& terminalNames,
-                                 NonTerminalNames const& nonTerminalNames) {
-            std::stringstream s;
-            s << "digraph CanonicalSet {" << std::endl;
+        std::ostream& dotStringify(std::ostream& out, Rules const& grammar,
+                                   CanonicalSet const& canonicalSet) {
+            out << "digraph CanonicalSet {" << std::endl;
 
             for (size_t i = 0; i < canonicalSet.size(); ++i) {
-                s << "I" << i << "[label=\"";
+                out << "I" << i << "[label=\"";
                 for_each_c(Situations, canonicalSet.at(i).situations, sit) {
-                    if (sit != canonicalSet.at(i).situations.begin()) s  << "\n";
-                    s << sit->stringify(terminalNames, nonTerminalNames);
+                    if (sit != canonicalSet.at(i).situations.begin()) out  << "\n";
+                    sit->stringify(out, terminalNames, nonTerminalNames);
                 }
-                s << "\"]\n";
+                out << "\"]\n";
             }
 
             for (size_t i = 0; i < canonicalSet.size(); ++i) {
@@ -763,18 +762,18 @@ namespace parser {
 
                     for (size_t j = 0; j < canonicalSet.size(); ++j) {
                         if (goToSits == canonicalSet.at(j).situations) {
-                            s << "I" << i << " -> " << "I" << j << " [label=\""
+                            out << "I" << i << " -> " << "I" << j << " [label=\""
                               << (symbol->isTerminal ? lexer::terminalName(symbol->value, terminalNames)
                                                      : nonTerminalName(symbol->value, nonTerminalNames)) << "\"]" << std::endl;
                         }
                     }
                 }
             }
-            s << "}";
-            return s.str();
+            out << "}";
+            return out;
         }
 
-        static CanonicalSet items(Rules const& rules, UniqueGrammaticSymbols const& uniqueGrammaticSymbols) {
+        CanonicalSet items(Rules const& rules, UniqueGrammaticSymbols const& uniqueGrammaticSymbols) {
             CanonicalSet canonicalSet;
 
             Situations situations;
@@ -790,7 +789,7 @@ namespace parser {
                 CanonicalSet t;
                 for_each(CanonicalSet, canonicalSet, canonicalItem) {
                     for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol) {
-                        Situations goToSituation = goTo(rules, canonicalItem->situations, *symbol/*, terminalNames, nonTerminalNames*/);
+                        Situations goToSituation = goTo(rules, canonicalItem->situations, *symbol);
                         if (goToSituation.empty())
                             continue;
                         if (std::find_if(canonicalSet.begin(), canonicalSet.end(), Pred(goToSituation)) == canonicalSet.end() &&
@@ -821,11 +820,9 @@ namespace parser {
             }
         }
 
-        static Situations goTo(Rules const& grammar,
+        Situations goTo(Rules const& grammar,
                                Situations const& situations,
-                               GrammaticSymbol const& grammaticSymbol/*,
-                               lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
-                               NonTerminalNames const& nonTerminalNames = NonTerminalNames()*/) {
+                               GrammaticSymbol const& grammaticSymbol) {
             Situations goToSituations;
             for_each_c(Situations, situations, s) {
                 if (s->body.size() == s->point)
@@ -846,21 +843,18 @@ namespace parser {
             return goToClosure;
         }
 
-        Node parse(lexer::Tokens const& tokens,
-                   lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
-                   NonTerminalNames const& nonTerminalNames = NonTerminalNames()) {
+        Node parse(lexer::Tokens const& tokens) {
             StateStack stateStack;
-            Nodes nodeStack;
             stateStack.push_back(StartNonTerminal);
-            for (Tokens::const_iterator token = tokens.begin(); /*token != tokens.end()*/; /*++token*/) {
+            Nodes nodeStack;
+			Tokens::const_iterator token = tokens.begin();
+            while (true) {
                 ActionState actionState = action(stateStack.back(), token->tokenId);
                 if (actionState.action == Shift) {
                     nodeStack.push_back(Node(*token));
                     stateStack.push_back(actionState.state);
-                    
-                    stringifyStep(std::cout, stateStack, nodeStack, actionState, *token, terminalNames, nonTerminalNames);
-                    std::cout << std::endl;
-                    
+                    if (debug)
+                        stringifyStep(std::cout, stateStack, nodeStack, actionState, *token) << std::endl;
                     ++token;
                 } else if (actionState.action == Reduce) {
                     Nodes nodes;
@@ -872,12 +866,11 @@ namespace parser {
                     nodeStack.erase(start, nodeStack.end());
                     nodeStack.push_back(Node(Production(actionState.nonTerminal, nodes)));
 
-                    for (size_t i = 0; i < actionState.reduceCount; ++i)
-                        stateStack.pop_back();
+					stateStack.erase(stateStack.end() - actionState.reduceCount, stateStack.end());
                     stateStack.push_back(goTo(stateStack.back(), actionState.nonTerminal));
 
-                    stringifyStep(std::cout, stateStack, nodeStack, actionState, *token, terminalNames, nonTerminalNames);
-                    std::cout << std::endl;
+                    if (debug)
+                        stringifyStep(std::cout, stateStack, nodeStack, actionState, *token) << std::endl;
                 } else if (actionState.action == Error) {
                     throw ParserError("error state");
                 } else if (actionState.action == Accept) {
@@ -888,13 +881,12 @@ namespace parser {
             }
         }
 
-        std::ostream& stringifyStep(std::ostream&                out,
-                                    StateStack            const& stateStack,
-                                    Nodes                 const& nodes,
-                                    ActionState           const& actionState,
-                                    Token                 const& nextToken,
-                                    lexer::TerminalNames  const& terminalNames    = lexer::TerminalNames(),
-                                    NonTerminalNames      const& nonTerminalNames = NonTerminalNames()) {
+        std::ostream& stringifyStep(std::ostream& out,
+                                    StateStack const& stateStack,
+                                    Nodes const& nodes,
+                                    ActionState const& actionState,
+                                    Token const& nextToken)
+        {
             const int w = 120;
             {
                 std::stringstream s;
@@ -931,8 +923,7 @@ namespace parser {
             return out;
         }
 
-        std::string stringify(lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
-
+        std::string stringify() {
             size_t extStates = states + 1;
             size_t extTerminals = terminals + 1;
 
@@ -1009,7 +1000,7 @@ namespace parser {
     private:
         ActionState action(State curState, lexer::Terminal terminal) {
             std::vector<ActionState> const& act = getAction(curState, terminal);
-            return act.empty() ? ActionState(Shift, 0, 0, 0) : act.at(0);
+            return act.empty() ? ActionState(Error, 0, 0, 0) : act.at(0);
         }
 
         State goTo(State curState, NonTerminal nonTerminal) {
@@ -1033,6 +1024,9 @@ namespace parser {
         size_t states;
         size_t terminals;
         size_t nonTerminals;
+		bool debug;
+		lexer::TerminalNames terminalNames;
+		NonTerminalNames nonTerminalNames;
     };
 }
 
@@ -1454,7 +1448,8 @@ namespace json {
     }
 
     lexer::Lexer jsonLexer(rules::lexerRules);
-    parser::Parser jsonParser(rules::jsonGrammarRules, json::rules::terminalsNames, json::rules::nonTerminalNames);
+//    parser::Parser jsonParser(rules::jsonGrammarRules, true, json::rules::terminalsNames, json::rules::nonTerminalNames);
+    parser::Parser jsonParser(rules::jsonGrammarRules);
 
     class Json {
         enum Type {
@@ -1630,15 +1625,7 @@ namespace json {
         void init(std::string const& string) {
             lexer::Tokens tokens = jsonLexer.analize(string);
 
-            for_each (lexer::Tokens, tokens, token) {
-                std::cout << *token << std::endl;
-            }
-
-            std::cout << jsonParser.stringify(json::rules::terminalsNames, json::rules::nonTerminalNames) << std::endl;
-
-            parser::Node ast = jsonParser.parse(tokens, json::rules::terminalsNames, json::rules::nonTerminalNames);
-
-            std::cout << ast << std::endl;
+            parser::Node ast = jsonParser.parse(tokens);
 
             init(ast);
         }
