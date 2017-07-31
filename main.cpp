@@ -424,35 +424,74 @@ namespace parser {
         }
     };
 
-    typedef std::vector<GrammaticSymbol> Items;             // X, Y, Z
-    typedef std::vector<Items> Variants;             // alpha | beta | gamma
-    typedef std::map<NonTerminal, Variants> Rules;   // A -> alpha | beta | gamma
+    typedef std::vector<GrammaticSymbol> GrammaticSymbols;  // X, Y, Z
+    typedef std::vector<GrammaticSymbols> Alternative;      // alpha | beta | gamma
+    typedef std::map<NonTerminal, Alternative> Grammar;     // A -> alpha | beta | gamma
 
-    typedef common::make_map<NonTerminal, Variants> MakeRules;
-    typedef common::make_vector<Items> MakeItems;
-    typedef common::make_vector<GrammaticSymbol> MakeVariant;
+    typedef common::make_vector<GrammaticSymbol> MakeGrammaticSymbols;
+    typedef common::make_vector<GrammaticSymbols> MakeAlternatives;
+    typedef common::make_map<NonTerminal, Alternative> MakeGrammar;
 
+/*
+    class GrammarBuilder;
 
-//    struct GrammarBuilder;
-//
-//    struct ProductionBuilder : GrammarBuilder {
-//
-//    };
-//
-//    struct GrammarBuilder {
-//        Rules rules;
-//
-//        GrammarBuilder& addProduction(NonTerminal nonTerminal, Items const& items) {
-//            rules.insert(std::make_pair(nonTerminal, items));
-//            return *this;
-//        }
-//
-//        operator Rules() const {
-//            return rules;
-//        }
-//
-//
-//    };
+	class ProductionBuilder : public GrammarBuilder;
+
+	class AlternativeBuilder : public ProductionBuilder {
+	public:
+		AlternativeBuilder(ProductionBuilder& productionBuilder, NonTerminal nonTerminal) :
+				ProductionBuilder(grammarBuilder, nonTerminal)
+		{}
+
+		AlternativeBuilder& term() {
+			return *this;
+		}
+
+		AlternativeBuilder& nonTerm() {
+			return *this;
+		}
+
+		virtual ~AlternativeBuilder()
+		{
+		}
+	};
+
+    class ProductionBuilder : public GrammarBuilder {
+	public:
+		ProductionBuilder(GrammarBuilder& grammarBuilder, NonTerminal nonTerminal) :
+				grammarBuilder(grammarBuilder), nonTerminal(nonTerminal) {
+		}
+
+		AlternativeBuilder alternative() {
+			return AlternativeBuilder(*this);
+		}
+
+		virtual ~ProductionBuilder() {
+//			grammar.insert(std::make_pair(nonTerminal, ))
+		}
+
+	protected:
+		GrammarBuilder& grammarBuilder;
+		NonTerminal nonTerminal;
+//		Alternative alternative;
+	};
+
+    class GrammarBuilder {
+	public:
+		ProductionBuilder production(NonTerminal nonTerminal) {
+			return ProductionBuilder(*this, nonTerminal);
+		}
+
+        operator Grammar() const {
+            return grammar;
+        }
+
+	protected:
+
+	private:
+		Grammar grammar;
+	};
+*/
 
     enum Action {
         Shift,
@@ -473,14 +512,14 @@ namespace parser {
 
     struct Convolution {
         NonTerminal header;
-        Items body;
+        GrammaticSymbols body;
 
-        explicit Convolution(NonTerminal header = Invalid, Items const& body = Items()) : header(header), body(body)
+        explicit Convolution(NonTerminal header = Invalid, GrammaticSymbols const& body = GrammaticSymbols()) : header(header), body(body)
         {}
 
         virtual std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) {
             out << nonTerminalName(header, nonTerminalNames) << " -> ";
-            for_each(Items, body, item) {
+            for_each(GrammaticSymbols, body, item) {
                 if (item != body.begin()) out << ", ";
                 item->stringify(out, terminalNames, nonTerminalNames);
             }
@@ -604,12 +643,12 @@ namespace parser {
     struct Situation : Convolution {
         size_t point;
 
-        explicit Situation(NonTerminal nonTerminal = Invalid, Items const& items = Items()) : Convolution(nonTerminal, items), point(0) {
+        explicit Situation(NonTerminal nonTerminal = Invalid, GrammaticSymbols const& items = GrammaticSymbols()) : Convolution(nonTerminal, items), point(0) {
         }
 
         virtual std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
             out << nonTerminalName(header, nonTerminalNames) << " -> ";
-            for_each_c(Items, body, item) {
+            for_each_c(GrammaticSymbols, body, item) {
                 if (std::distance(body.begin(), item) == point) out << "^";
                 out << " "
                              << (item->isTerminal ? lexer::terminalName(item->value, terminalNames) : nonTerminalName(item->value, nonTerminalNames))
@@ -658,22 +697,22 @@ namespace parser {
 
     class Parser {
     public:
-        explicit Parser(Rules const& rules = Rules(),
+        explicit Parser(Grammar const& grammar = Grammar(),
 						bool debug = false,
                         lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
                         NonTerminalNames const& nonTerminalNames = NonTerminalNames()) :
 				states(0), terminals(0), nonTerminals(0), debug(debug), terminalNames(terminalNames),
 				nonTerminalNames(nonTerminalNames) {
             UniqueGrammaticSymbols uniqueGrammaticSymbols;
-            for_each_c(Rules, rules, rule)
+            for_each_c(Grammar, grammar, rule)
             {
                 uniqueGrammaticSymbols.insert(GrammaticSymbol(rule->first, false));
-                for_each_c(Variants, rule->second, variants)
-                    for_each_c(Items, (*variants), item)
+                for_each_c(Alternative, rule->second, variants)
+                    for_each_c(GrammaticSymbols, (*variants), item)
                         uniqueGrammaticSymbols.insert(*item);
             }
 
-            CanonicalSet canonicalSet = items(rules, uniqueGrammaticSymbols);
+            CanonicalSet canonicalSet = items(grammar, uniqueGrammaticSymbols);
 
             UniqueTerminals uniqueTerminals;
             for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol)
@@ -703,7 +742,7 @@ namespace parser {
                             if (!situation->body.at(situation->point).isTerminal)
                                 continue;
 
-                            Situations goToSits = goTo(rules, canonicalSet.at(i).situations, GrammaticSymbol(*terminal));
+                            Situations goToSits = goTo(grammar, canonicalSet.at(i).situations, GrammaticSymbol(*terminal));
 
                             for (size_t j = 0; j < canonicalSet.size(); ++j) {
                                 if (canonicalSet.at(j).situations == goToSits) {
@@ -718,7 +757,7 @@ namespace parser {
                     }
                 }
                 for_each(UniqueNonTerminals, uniqueNonTerminals, nonTerminal) {
-                    Situations gts = goTo(rules, canonicalSet.at(i).situations, GrammaticSymbol(*nonTerminal, false));
+                    Situations gts = goTo(grammar, canonicalSet.at(i).situations, GrammaticSymbol(*nonTerminal, false));
                     for (State j = 0; j < canonicalSet.size(); ++j) {
                         if (gts == canonicalSet.at(j).situations) {
                             getGoTo(i, *nonTerminal) = j;
@@ -731,12 +770,12 @@ namespace parser {
                 std::cout << "records in canonical set " << canonicalSet.size() << std::endl;
                 for_each(CanonicalSet, canonicalSet, item)
                     item->stringify(std::cout, terminalNames, nonTerminalNames) << std::endl;
-                dotStringify(std::cout, rules, canonicalSet) << std::endl;
+                dotStringify(std::cout, grammar, canonicalSet) << std::endl;
                 stringify();
             }
         }
 
-        std::ostream& dotStringify(std::ostream& out, Rules const& grammar,
+        std::ostream& dotStringify(std::ostream& out, Grammar const& grammar,
                                    CanonicalSet const& canonicalSet) {
             out << "digraph CanonicalSet {" << std::endl;
 
@@ -773,13 +812,13 @@ namespace parser {
             return out;
         }
 
-        CanonicalSet items(Rules const& rules, UniqueGrammaticSymbols const& uniqueGrammaticSymbols) {
+        CanonicalSet items(Grammar const& grammar, UniqueGrammaticSymbols const& uniqueGrammaticSymbols) {
             CanonicalSet canonicalSet;
 
             Situations situations;
-            Situation start(StartNonTerminal, MakeVariant(GrammaticSymbol(InitialNonTerminal, false)));
+            Situation start(StartNonTerminal, MakeGrammaticSymbols(GrammaticSymbol(InitialNonTerminal, false)));
             situations.push_back(start);
-            closure(situations, rules, start);
+            closure(situations, grammar, start);
 
             canonicalSet.push_back(CanonicalItem(GrammaticSymbol(lexer::InvalidToken), situations));
 
@@ -789,7 +828,7 @@ namespace parser {
                 CanonicalSet t;
                 for_each(CanonicalSet, canonicalSet, canonicalItem) {
                     for_each(UniqueGrammaticSymbols, uniqueGrammaticSymbols, symbol) {
-                        Situations goToSituation = goTo(rules, canonicalItem->situations, *symbol);
+                        Situations goToSituation = goTo(grammar, canonicalItem->situations, *symbol);
                         if (goToSituation.empty())
                             continue;
                         if (std::find_if(canonicalSet.begin(), canonicalSet.end(), Pred(goToSituation)) == canonicalSet.end() &&
@@ -805,13 +844,13 @@ namespace parser {
             return canonicalSet;
         }
 
-        static void closure(Situations& situations, Rules const& grammar, Situation const& situation) {
+        static void closure(Situations& situations, Grammar const& grammar, Situation const& situation) {
             if (situation.body.size() == situation.point)
                 return;
             if (situation.body.at(situation.point).isTerminal)
                 return;
-            Rules::const_iterator rule = grammar.find(situation.body.at(situation.point).value);
-            for_each_c(Variants, rule->second, v) {
+            Grammar::const_iterator rule = grammar.find(situation.body.at(situation.point).value);
+            for_each_c(Alternative, rule->second, v) {
                 Situation s(rule->first, *v);
                 if (std::find(situations.begin(), situations.end(), s) == situations.end()) {
                     situations.push_back(s);
@@ -820,9 +859,9 @@ namespace parser {
             }
         }
 
-        Situations goTo(Rules const& grammar,
-                               Situations const& situations,
-                               GrammaticSymbol const& grammaticSymbol) {
+        Situations goTo(Grammar const& grammar,
+                        Situations const& situations,
+                        GrammaticSymbol const& grammaticSymbol) {
             Situations goToSituations;
             for_each_c(Situations, situations, s) {
                 if (s->body.size() == s->point)
@@ -1155,10 +1194,10 @@ namespace json {
         };
 
         typedef parser::GrammaticSymbol GrammaticSym;
-        typedef parser::Rules Rules;
-        typedef parser::MakeRules MakeRules;
-        typedef parser::MakeItems MakeItems;
-        typedef parser::MakeVariant MakeVariant;
+        typedef parser::Grammar Grammar;
+        typedef parser::MakeGrammar MakeGrammar;
+        typedef parser::MakeAlternatives MakeAlternatives;
+        typedef parser::MakeGrammaticSymbols MakeGrammaticSymbols;
 
         /**
          * Json grammar rules description
@@ -1173,46 +1212,47 @@ namespace json {
          */
 
         /*
-           GrammarBuilder.
+           Grammar grammar = GrammarBuilder.
                 rule(Json).nonTerm(Object).
                 rule(Json).nonTerm(Array).
                 rule(Object).term(ObjectStart).nonTerm(Records).term(ObjectEnd).
                 rule(Object).term(ObjectStart).term(ObjectEnd).
                 rule().
+                build();
                     ....
          */
 
-        static Rules jsonGrammarRules = MakeRules
-                (Json, MakeItems
-                        (MakeVariant(GrammaticSym(Object, false)))
-                        (MakeVariant(GrammaticSym(Array, false)))
+        static Grammar jsonGrammarRules = MakeGrammar
+                (Json, MakeAlternatives
+                        (MakeGrammaticSymbols(GrammaticSym(Object, false)))
+                        (MakeGrammaticSymbols(GrammaticSym(Array, false)))
                 )
-                (Object, MakeItems
-                        (MakeVariant(GrammaticSym(ObjectStart))(GrammaticSym(Records, false))(GrammaticSym(ObjectEnd)))
-                        (MakeVariant(GrammaticSym(ObjectStart))(GrammaticSym(ObjectEnd)))
+                (Object, MakeAlternatives
+                        (MakeGrammaticSymbols(GrammaticSym(ObjectStart))(GrammaticSym(Records, false))(GrammaticSym(ObjectEnd)))
+                        (MakeGrammaticSymbols(GrammaticSym(ObjectStart))(GrammaticSym(ObjectEnd)))
                 )
-                (Array, MakeItems
-                        (MakeVariant(GrammaticSym(ArrayStart))(GrammaticSym(Values, false))(GrammaticSym(ArrayEnd)))
-                        (MakeVariant(GrammaticSym(ArrayStart))(GrammaticSym(ArrayEnd)))
+                (Array, MakeAlternatives
+                        (MakeGrammaticSymbols(GrammaticSym(ArrayStart))(GrammaticSym(Values, false))(GrammaticSym(ArrayEnd)))
+                        (MakeGrammaticSymbols(GrammaticSym(ArrayStart))(GrammaticSym(ArrayEnd)))
                 )
-                (Records, MakeItems
-                        (MakeVariant(GrammaticSym(Record, false))(GrammaticSym(Comma))(GrammaticSym(Records, false)))
-                        (MakeVariant(GrammaticSym(Record, false)))
+                (Records, MakeAlternatives
+                        (MakeGrammaticSymbols(GrammaticSym(Record, false))(GrammaticSym(Comma))(GrammaticSym(Records, false)))
+                        (MakeGrammaticSymbols(GrammaticSym(Record, false)))
                 )
-                (Record, MakeItems
-                        (MakeVariant(GrammaticSym(String))(GrammaticSym(Semicolon))(GrammaticSym(Value, false)))
+                (Record, MakeAlternatives
+                        (MakeGrammaticSymbols(GrammaticSym(String))(GrammaticSym(Semicolon))(GrammaticSym(Value, false)))
                 )
-                (Values, MakeItems
-                        (MakeVariant(GrammaticSym(Value, false))(GrammaticSym(Comma))(GrammaticSym(Values, false)))
-                        (MakeVariant(GrammaticSym(Value, false)))
+                (Values, MakeAlternatives
+                        (MakeGrammaticSymbols(GrammaticSym(Value, false))(GrammaticSym(Comma))(GrammaticSym(Values, false)))
+                        (MakeGrammaticSymbols(GrammaticSym(Value, false)))
                 )
-                (Value, MakeItems
-                        (MakeVariant(GrammaticSym(Object, false)))
-                        (MakeVariant(GrammaticSym(Array, false)))
-                        (MakeVariant(GrammaticSym(String)))
-                        (MakeVariant(GrammaticSym(Float)))
-                        (MakeVariant(GrammaticSym(Integer)))
-                        (MakeVariant(GrammaticSym(Bool)))
+                (Value, MakeAlternatives
+                        (MakeGrammaticSymbols(GrammaticSym(Object, false)))
+                        (MakeGrammaticSymbols(GrammaticSym(Array, false)))
+                        (MakeGrammaticSymbols(GrammaticSym(String)))
+                        (MakeGrammaticSymbols(GrammaticSym(Float)))
+                        (MakeGrammaticSymbols(GrammaticSym(Integer)))
+                        (MakeGrammaticSymbols(GrammaticSym(Bool)))
                 )
         ;
 
@@ -1448,7 +1488,7 @@ namespace json {
     }
 
     lexer::Lexer jsonLexer(rules::lexerRules);
-//    parser::Parser jsonParser(rules::jsonGrammarRules, true, json::rules::terminalsNames, json::rules::nonTerminalNames);
+//    parser::Parser jsonParser(grammar::jsonGrammarRules, true, json::grammar::terminalsNames, json::grammar::nonTerminalNames);
     parser::Parser jsonParser(rules::jsonGrammarRules);
 
     class Json {
