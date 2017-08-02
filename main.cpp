@@ -25,10 +25,20 @@
 #define for_each_c(container_type, container_obj, iterator_name) \
     for (container_type::const_iterator iterator_name = container_obj.begin(); iterator_name != container_obj.end(); ++iterator_name)
 
+/* TODO
+ * Найти имя
+ * Символ конца потока токенов
+ * Билдер для грамматики
+ * Устранение неоднозначностей
+ * Обработка ошибок в лексере и парсере
+ * Переделать лексер
+ * Переделать класс Json для того чтобы он сам был и объектом и массивом
+ *
 // flexify
 // Yet another lexer and parser
 // Yalp
 // Lerser
+ */
 
 namespace common {
     typedef std::vector<char> ByteBuffer;
@@ -614,7 +624,10 @@ namespace parser {
             return stream.str();
         }
 
-		std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames, int indent) const {
+        std::ostream& stringify(std::ostream& out,
+                                lexer::TerminalNames const& terminalNames,
+                                NonTerminalNames const& nonTerminalNames,
+                                int indent) const {
             std::string indentation = indent2string(indent);
             if (isProduction_) {
                 out << indentation << "+" << nonTerminalName(production.nonTerminal, nonTerminalNames) << std::endl;
@@ -676,12 +689,14 @@ namespace parser {
         CanonicalItem(GrammaticSymbol const& terminal, Situations const& situations) : terminal(terminal),
                                                                                        situations(situations) {}
 
-		std::ostream& stringify(std::ostream& out, lexer::TerminalNames const& terminalNames, NonTerminalNames const& nonTerminalNames) const {
+        std::ostream& stringify(std::ostream& out,
+                                lexer::TerminalNames const& terminalNames,
+                                NonTerminalNames const& nonTerminalNames) const {
             terminal.stringify(out, terminalNames, nonTerminalNames) << "\n";
-			for_each_c(Situations, situations, s)
-				s->stringify(out, terminalNames, nonTerminalNames) << "\n";
-			return out;
-		}
+            for_each_c(Situations, situations, s)
+                s->stringify(out, terminalNames, nonTerminalNames) << "\n";
+            return out;
+        }
     };
 
     typedef std::vector<CanonicalItem> CanonicalSet;
@@ -698,11 +713,11 @@ namespace parser {
     class Parser {
     public:
         explicit Parser(Grammar const& grammar = Grammar(),
-						bool debug = false,
+                        bool debug = false,
                         lexer::TerminalNames const& terminalNames = lexer::TerminalNames(),
                         NonTerminalNames const& nonTerminalNames = NonTerminalNames()) :
-				states(0), terminals(0), nonTerminals(0), debug(debug), terminalNames(terminalNames),
-				nonTerminalNames(nonTerminalNames) {
+                states(0), terminals(0), nonTerminals(0), debug(debug), terminalNames(terminalNames),
+                nonTerminalNames(nonTerminalNames) {
             UniqueGrammaticSymbols uniqueGrammaticSymbols;
             for_each_c(Grammar, grammar, rule)
             {
@@ -771,7 +786,7 @@ namespace parser {
                 for_each(CanonicalSet, canonicalSet, item)
                     item->stringify(std::cout, terminalNames, nonTerminalNames) << std::endl;
                 dotStringify(std::cout, grammar, canonicalSet) << std::endl;
-                stringify();
+                stringifyTables();
             }
         }
 
@@ -886,7 +901,7 @@ namespace parser {
             StateStack stateStack;
             stateStack.push_back(StartNonTerminal);
             Nodes nodeStack;
-			Tokens::const_iterator token = tokens.begin();
+            Tokens::const_iterator token = tokens.begin();
             while (true) {
                 ActionState actionState = action(stateStack.back(), token->tokenId);
                 if (actionState.action == Shift) {
@@ -905,7 +920,7 @@ namespace parser {
                     nodeStack.erase(start, nodeStack.end());
                     nodeStack.push_back(Node(Production(actionState.nonTerminal, nodes)));
 
-					stateStack.erase(stateStack.end() - actionState.reduceCount, stateStack.end());
+                    stateStack.erase(stateStack.end() - actionState.reduceCount, stateStack.end());
                     stateStack.push_back(goTo(stateStack.back(), actionState.nonTerminal));
 
                     if (debug)
@@ -962,7 +977,7 @@ namespace parser {
             return out;
         }
 
-        std::string stringify() {
+        std::string stringifyTables() {
             size_t extStates = states + 1;
             size_t extTerminals = terminals + 1;
 
@@ -1063,9 +1078,9 @@ namespace parser {
         size_t states;
         size_t terminals;
         size_t nonTerminals;
-		bool debug;
-		lexer::TerminalNames terminalNames;
-		NonTerminalNames nonTerminalNames;
+        bool debug;
+        lexer::TerminalNames terminalNames;
+        NonTerminalNames nonTerminalNames;
     };
 }
 
@@ -1211,15 +1226,16 @@ namespace json {
          * Record  ::= String, Semicolon, Value
          */
 
-        /*
-           Grammar grammar = GrammarBuilder.
-                rule(Json).nonTerm(Object).
-                rule(Json).nonTerm(Array).
-                rule(Object).term(ObjectStart).nonTerm(Records).term(ObjectEnd).
-                rule(Object).term(ObjectStart).term(ObjectEnd).
-                rule().
-                build();
-                    ....
+        /**
+         * J := Os, RS, Oe | Os, Oe;
+         *
+         * Grammar jsonGrammar = GrammarBuilder().
+         *     production(J).
+         *         alternative().
+         *             t(Os).nt(RS).t(Oe).
+         *         alternative().
+         *             t(Os).nt(Oe).
+         * build();
          */
 
         static Grammar jsonGrammarRules = MakeGrammar
@@ -1555,33 +1571,33 @@ namespace json {
             std::stringstream s(uv.getToken().value);
             lexer::TokenId tokenType = uv.getToken().tokenId;
 
-			if (uv.isProduction()) {
-				if (uv.getProduction().nonTerminal == rules::Object) {
-					object(name, createObject(uv));
-				} else if (uv.getProduction().nonTerminal == rules::Array) {
-					object(name, createArray(uv));
-				} else {
-					throw JsonError("invalid token type");
-				}
-			} else {
-				if (tokenType == rules::Integer) {
-					int64_t i = 0;
-					s >> i;
-					object(name, i);
-				} else if (tokenType == rules::String) {
-					object(name, uv.getToken().value);
-				} else if (tokenType == rules::Float) {
-					double d = 0;
-					s >> d;
-					object(name, d);
-				} else if (tokenType == rules::Bool) {
-					bool b = false;
-					s >> b;
-					object(name, b);
-				} else {
-					throw JsonError("invalid token type");
-				}
-			}
+            if (uv.isProduction()) {
+                if (uv.getProduction().nonTerminal == rules::Object) {
+                    object(name, createObject(uv));
+                } else if (uv.getProduction().nonTerminal == rules::Array) {
+                    object(name, createArray(uv));
+                } else {
+                    throw JsonError("invalid token type");
+                }
+            } else {
+                if (tokenType == rules::Integer) {
+                    int64_t i = 0;
+                    s >> i;
+                    object(name, i);
+                } else if (tokenType == rules::String) {
+                    object(name, uv.getToken().value);
+                } else if (tokenType == rules::Float) {
+                    double d = 0;
+                    s >> d;
+                    object(name, d);
+                } else if (tokenType == rules::Bool) {
+                    bool b = false;
+                    s >> b;
+                    object(name, b);
+                } else {
+                    throw JsonError("invalid token type");
+                }
+            }
 
             if (RS.getProduction().nodes.size() > 1) {
                 parser::Node const& nextRs = RS.getProduction().nodes.at(2);
@@ -1603,31 +1619,31 @@ namespace json {
 
             std::stringstream s(uv.getToken().value);
 
-			if (uv.isProduction()) {
-				if (uv.getProduction().nonTerminal == rules::Object) {
-					array(createObject(uv));
-				} else if (uv.getProduction().nonTerminal == rules::Array) {
-					array(createArray(uv));
-				} else {
-					throw JsonError("invalid format");
-				}
-			} else {
-				if (uv.getToken().tokenId == rules::Integer) {
-					int64_t i = 0;
-					s >> i;
-					array(i);
-				} else if (uv.getToken().tokenId == rules::String) {
-					array(uv.getToken().value);
-				} else if (uv.getToken().tokenId == rules::Float) {
-					double d = 0;
-					s >> d;
-					array(d);
-				} else if (uv.getToken().tokenId == rules::Bool) {
-					array(uv.getToken().value == "true");
-				} else {
-					throw JsonError("invalid format");
-				}
-			}
+            if (uv.isProduction()) {
+                if (uv.getProduction().nonTerminal == rules::Object) {
+                    array(createObject(uv));
+                } else if (uv.getProduction().nonTerminal == rules::Array) {
+                    array(createArray(uv));
+                } else {
+                    throw JsonError("invalid format");
+                }
+            } else {
+                if (uv.getToken().tokenId == rules::Integer) {
+                    int64_t i = 0;
+                    s >> i;
+                    array(i);
+                } else if (uv.getToken().tokenId == rules::String) {
+                    array(uv.getToken().value);
+                } else if (uv.getToken().tokenId == rules::Float) {
+                    double d = 0;
+                    s >> d;
+                    array(d);
+                } else if (uv.getToken().tokenId == rules::Bool) {
+                    array(uv.getToken().value == "true");
+                } else {
+                    throw JsonError("invalid format");
+                }
+            }
 
             if (VS.getProduction().nodes.size() > 1) {
                 parser::Node const& nextVS = VS.getProduction().nodes.at(2);
