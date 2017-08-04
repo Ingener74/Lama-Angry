@@ -188,6 +188,64 @@ namespace common {
 }
 
 namespace lexer {
+
+	namespace new_lexer {
+		typedef std::string String;
+
+		typedef int Symbol;
+		typedef std::vector<Symbol> Language;
+
+		const Symbol Empty = ~0;
+
+		typedef int State;
+		typedef std::vector<std::vector<State> > nFSM;
+
+		class LanguageBuilder {
+		public:
+			LanguageBuilder()
+			{}
+
+			LanguageBuilder& add(String const& string) {
+				return *this;
+			}
+
+			LanguageBuilder& add(Symbol symbol) {
+				return *this;
+			}
+
+			operator Language() const {
+				return language;
+			}
+
+		private:
+			Language language;
+		};
+
+		class RegularExpression {
+		public:
+			RegularExpression()
+			{}
+		};
+
+		class Union: public RegularExpression {
+		public:
+			Union()
+			{}
+		};
+
+		class Concatanation: public RegularExpression {
+		public:
+			Concatanation()
+			{}
+		};
+
+		class KleeneStar: public RegularExpression {
+		public:
+			KleeneStar()
+			{}
+		};
+	}
+
     typedef int RuleId;
     typedef int TokenId;
     typedef int Increment;
