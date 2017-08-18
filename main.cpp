@@ -29,6 +29,7 @@
  * Найти имя
  * Символ конца потока токенов
  * Билдер для грамматики
+ * Билдер для лексики
  * Устранение неоднозначностей
  * Обработка ошибок в лексере и парсере
  * Переделать лексер
@@ -188,8 +189,28 @@ namespace common {
 }
 
 namespace lexer {
-
 	namespace new_lexer {
+
+		template<typename T>
+		class Matrix {
+		public:
+			explicit Matrix(int rows = 0, int cols = 0) : rows(rows), cols(cols), data(rows * cols)
+			{}
+
+			T& at(int row, int col) {
+				return data.at(row * cols + col);
+			}
+
+			const T& at(int row, int col) const {
+				return data.at(row * cols + col);
+			}
+
+		private:
+			int rows;
+			int cols;
+			std::vector<T> data;
+		};
+
 		typedef std::string String;
 
 		typedef int Symbol;
@@ -198,7 +219,44 @@ namespace lexer {
 		const Symbol Empty = ~0;
 
 		typedef int State;
-		typedef std::vector<std::vector<State> > nFSM;
+		typedef std::vector<State> States;
+		typedef Matrix<States> nFsmTransitions;
+		typedef Matrix<State> dFsmTransitions;
+
+		class nFSM {
+		public:
+			nFSM(Language const& language) : state(0), transitions(language.size(), language.size()) {
+			}
+
+			void reset() {
+				state = 0;
+			}
+
+			bool accept(String const& string) {
+				for_each_c(String, string, chr) {
+					Symbol symbol = *chr;
+					if (transitions.at(state, symbol).size() > 0) {
+						State nextState = transitions.at(state, symbol).at(0);
+						state = nextState;
+					} else {
+						return false;
+					}
+				}
+				for_each(States, finishStates, stt)
+					if (state == *stt)
+						return true;
+				return false;
+			}
+
+			std::ostream& dotStringify(std::ostream& out) {
+				return out;
+			}
+
+		private:
+			nFsmTransitions transitions;
+			States finishStates;
+			State state;
+		};
 
 		class LanguageBuilder {
 		public:
@@ -1331,11 +1389,11 @@ namespace json {
         ;
 
         static parser::NonTerminalNames nonTerminalNames = common::make_map<parser::NonTerminal, std::string>
-                (Json,     "J"    )
-                (Object,   "O"  )
+                (Json,     "J"   )
+                (Object,   "O"   )
                 (Array,    "A"   )
-                (Records,  "RS" )
-                (Record,   "R"  )
+                (Records,  "RS"  )
+                (Record,   "R"   )
                 (Values,   "VS"  )
                 (Value,    "V"   )
         ;
