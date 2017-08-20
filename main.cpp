@@ -189,120 +189,128 @@ namespace common {
 }
 
 namespace lexer {
-	namespace new_lexer {
+    namespace new_lexer {
 
-		template<typename T>
-		class Matrix {
-		public:
-			explicit Matrix(int rows = 0, int cols = 0) : rows(rows), cols(cols), data(rows * cols)
-			{}
+        template<typename T>
+        class Matrix {
+        public:
+            explicit Matrix(int rows = 0, int cols = 0) : rows(rows), cols(cols), data(rows * cols) {}
 
-			T& at(int row, int col) {
-				return data.at(row * cols + col);
-			}
+            T &at(int row, int col) {
+                return data.at(row * cols + col);
+            }
 
-			const T& at(int row, int col) const {
-				return data.at(row * cols + col);
-			}
+            const T &at(int row, int col) const {
+                return data.at(row * cols + col);
+            }
 
-		private:
-			int rows;
-			int cols;
-			std::vector<T> data;
-		};
+            int getRows() const {
+                return rows;
+            }
 
-		typedef std::string String;
+            int getCols() const {
+                return cols;
+            }
 
-		typedef int Symbol;
-		typedef std::vector<Symbol> Language;
+        private:
+            int rows;
+            int cols;
+            std::vector<T> data;
+        };
 
-		const Symbol Empty = ~0;
+        typedef std::string String;
 
-		typedef int State;
-		typedef std::vector<State> States;
-		typedef Matrix<States> nFsmTransitions;
-		typedef Matrix<State> dFsmTransitions;
+        typedef int Symbol;
+        typedef std::vector<Symbol> Language;
 
-		class nFSM {
-		public:
-			nFSM(Language const& language) : state(0), transitions(language.size(), language.size()) {
-			}
+        const Symbol Empty = ~0;
 
-			void reset() {
-				state = 0;
-			}
+        typedef int State;
+        typedef std::vector<State> States;
+        typedef Matrix<States> nFsmTransitions;
+        typedef Matrix<State> dFsmTransitions;
 
-			bool accept(String const& string) {
-				for_each_c(String, string, chr) {
-					Symbol symbol = *chr;
-					if (transitions.at(state, symbol).size() > 0) {
-						State nextState = transitions.at(state, symbol).at(0);
-						state = nextState;
-					} else {
-						return false;
-					}
-				}
-				for_each(States, finishStates, stt)
-					if (state == *stt)
-						return true;
-				return false;
-			}
+        class nFSM {
+        public:
+            nFSM(Language const &language) : state(0), transitions(language.size(), language.size()) {
+                for (int i = 0; i < transitions.getRows(); ++i) {
+                    for (int j = 0; j < transitions.getCols(); ++j) {
+                        States states;
+                        states.push_back(-1);
+                        transitions.at(i, j) = states;
+                    }
+                }
+            }
 
-			std::ostream& dotStringify(std::ostream& out) {
-				return out;
-			}
+            void reset() {
+                state = 0;
+            }
 
-		private:
-			nFsmTransitions transitions;
-			States finishStates;
-			State state;
-		};
+            bool accept(String const &string) {
+                for_each_c(String, string, chr) {
+                    Symbol symbol = *chr;
+                    if (transitions.at(state, symbol).size() > 0) {
+                        State nextState = transitions.at(state, symbol).at(0);
+                        state = nextState;
+                    } else {
+                        return false;
+                    }
+                }
+                for_each(States, finishStates, stt) if (state == *stt)
+                        return true;
+                return false;
+            }
 
-		class LanguageBuilder {
-		public:
-			LanguageBuilder()
-			{}
+            std::ostream &dotStringify(std::ostream &out) {
+                return out;
+            }
 
-			LanguageBuilder& add(String const& string) {
-				return *this;
-			}
+        private:
+            nFsmTransitions transitions;
+            States finishStates;
+            State state;
+        };
 
-			LanguageBuilder& add(Symbol symbol) {
-				return *this;
-			}
+        class LanguageBuilder {
+        public:
+            LanguageBuilder() {}
 
-			operator Language() const {
-				return language;
-			}
+            LanguageBuilder &add(String const &string) {
+                return *this;
+            }
 
-		private:
-			Language language;
-		};
+            LanguageBuilder &add(Symbol symbol) {
+                return *this;
+            }
 
-		class RegularExpression {
-		public:
-			RegularExpression()
-			{}
-		};
+            operator Language() const {
+                return language;
+            }
 
-		class Union: public RegularExpression {
-		public:
-			Union()
-			{}
-		};
+        private:
+            Language language;
+        };
 
-		class Concatanation: public RegularExpression {
-		public:
-			Concatanation()
-			{}
-		};
+        class RegularExpression {
+        public:
+            RegularExpression() {}
+        };
 
-		class KleeneStar: public RegularExpression {
-		public:
-			KleeneStar()
-			{}
-		};
-	}
+        class Union : public RegularExpression {
+        public:
+            Union() {}
+        };
+
+        class Concatanation : public RegularExpression {
+        public:
+            Concatanation() {}
+        };
+
+        class KleeneStar : public RegularExpression {
+        public:
+            KleeneStar() {}
+        };
+    }
 
     typedef int RuleId;
     typedef int TokenId;
