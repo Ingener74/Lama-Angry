@@ -1034,6 +1034,9 @@ namespace parser {
                     if (debug)
                         stringifyStep(std::cout, stateStack, nodeStack, actionState, *token) << std::endl;
                     ++token;
+					if (token == tokens.end()) {
+						throw ParserError("error state");
+					}
                 } else if (actionState.action == Reduce) {
                     Nodes nodes;
                     Nodes::iterator start = nodeStack.end() - actionState.reduceCount;
@@ -1628,8 +1631,8 @@ namespace json {
     }
 
     lexer::Lexer jsonLexer(rules::lexerRules);
-//    parser::Parser jsonParser(grammar::jsonGrammarRules, true, json::grammar::terminalsNames, json::grammar::nonTerminalNames);
-    parser::Parser jsonParser(rules::jsonGrammarRules);
+	parser::Parser jsonParser(rules::jsonGrammarRules, true, rules::terminalsNames, rules::nonTerminalNames);
+    //parser::Parser jsonParser(rules::jsonGrammarRules);
 
     class Json {
         enum Type {
