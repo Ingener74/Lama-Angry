@@ -321,6 +321,7 @@ namespace lexer {
     const RuleId InvalidRule = ~0;
     const TokenId InvalidToken = ~0;
     const TokenId Skip = ~0 - 1;
+	const TokenId Eof = ~0 - 2;
 
     struct LexerError : std::runtime_error {
         explicit LexerError(const std::string& __arg) : runtime_error(__arg) {}
@@ -484,6 +485,7 @@ namespace lexer {
                 }
                 c += transition.increment;
             }
+			tokens.push_back(Token(Eof, "Eof"));
             return tokens;
         }
 
@@ -910,7 +912,7 @@ namespace parser {
                 for_each(CanonicalSet, canonicalSet, item)
                     item->stringify(std::cout, terminalNames, nonTerminalNames) << std::endl;
                 dotStringify(std::cout, grammar, canonicalSet) << std::endl;
-                stringifyTables();
+				std::cout << stringifyTables() << std::endl;
             }
         }
 
